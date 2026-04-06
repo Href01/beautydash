@@ -157,29 +157,30 @@ export function GrowthChart({ growth, selectedCountries, filteredPeriods }) {
 // ── Vertical Comparison Chart ──────────────────────────────────
 const VERTICAL_COLORS = { Retail: '#FFC244', MFC: '#00A082', Groceries: '#3B82F6' };
 
-export function VerticalComparisonChart({ byVertical, byVerticalCountryMonth, selectedCountries }) {
+export function VerticalComparisonChart({ byVerticalCountryMonth, selectedCountries }) {
+  // byVerticalCountryMonth is already filtered by period + country in the parent
   // Discover verticals present in data (no hardcoding)
-  const verticals = [...new Set(byVertical.map(r => r.vertical))].sort();
+  const verticals = [...new Set(byVerticalCountryMonth.map(r => r.vertical))].sort();
 
-  // Monthly totals per vertical
+  // Monthly totals per vertical — derived from country-filtered data
   const monthlyMap = {};
-  byVertical.forEach(r => {
+  byVerticalCountryMonth.forEach(r => {
     if (!monthlyMap[r.period]) {
       monthlyMap[r.period] = { period: r.period };
       verticals.forEach(v => { monthlyMap[r.period][v] = 0; });
     }
-    monthlyMap[r.period][r.vertical] = r.gmv;
+    monthlyMap[r.period][r.vertical] = (monthlyMap[r.period][r.vertical] || 0) + r.gmv;
   });
   const monthlyData = Object.values(monthlyMap).sort((a, b) => a.period.localeCompare(b.period));
 
   // Total per vertical for header KPIs
   const totalByVertical = {};
   verticals.forEach(v => {
-    totalByVertical[v] = byVertical.filter(r => r.vertical === v).reduce((s, r) => s + r.gmv, 0);
+    totalByVertical[v] = byVerticalCountryMonth.filter(r => r.vertical === v).reduce((s, r) => s + r.gmv, 0);
   });
   const grandTotal = Object.values(totalByVertical).reduce((s, v) => s + v, 0);
 
-  // Country breakdown — all periods, selected countries
+  // Country breakdown — same source, group by country
   const countryMap = {};
   byVerticalCountryMonth
     .filter(r => selectedCountries.includes(r.country))

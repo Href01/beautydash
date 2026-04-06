@@ -90,7 +90,6 @@ export default function Dashboard() {
   const {
     summary,
     byCountryMonth,
-    byVertical,
     byVerticalCountryMonth,
     monthlyTotal,
     growth,
@@ -177,7 +176,7 @@ export default function Dashboard() {
     ? ((lastMonth.gmv - prevMonth.gmv) / prevMonth.gmv * 100) : null;
 
   // ── Vertical breakdown (always ignores vertical filter) ───────
-  const filteredByVertical = filterByPeriod(byVertical || []);
+
   const retailGMV = filterByPeriod(byVerticalCountryMonth || [])
     .filter(v => v.vertical === 'Retail')
     .reduce((s, v) => s + v.gmv, 0);
@@ -383,7 +382,6 @@ export default function Dashboard() {
 
           {/* ── Retail vs MFC (always shows both verticals) ───────── */}
           <VerticalComparisonChart
-            byVertical={filteredByVertical}
             byVerticalCountryMonth={filterByPeriod(byVerticalCountryMonth || [])
               .filter(r => selected.includes(r.country))}
             selectedCountries={selected}
