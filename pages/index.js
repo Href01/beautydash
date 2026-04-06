@@ -276,12 +276,13 @@ export default function Dashboard() {
           </div>
 
           {/* ── Country Table ──────────────────────────────────── */}
-          <CountryTable
-            byCountry={byCountry}
-            growth={growth}
-            totalGMV={summary.totalGMV}
-            totalOrders={summary.totalOrders}
-          />
+<CountryTable
+  byCountry={byCountry}
+  byCountryMonth={cleanByCountryMonth}
+  filteredPeriods={filteredPeriods}
+  totalGMV={filteredGMV}
+  totalOrders={filteredOrders}
+/>
 
           {/* ── Insights ──────────────────────────────────────── */}
           <InsightsPanel
