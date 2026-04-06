@@ -15,11 +15,11 @@ const PERIOD_FILTERS = [
 ];
 
 export default function Dashboard() {
-  const [data, setData]             = useState(null);
-  const [loading, setLoading]       = useState(true);
-  const [error, setError]           = useState(null);
-  const [dark, setDark]             = useState(true);
-  const [selected, setSelected]     = useState(COUNTRIES);
+  const [data, setData]                 = useState(null);
+  const [loading, setLoading]           = useState(true);
+  const [error, setError]               = useState(null);
+  const [dark, setDark]                 = useState(true);
+  const [selected, setSelected]         = useState(COUNTRIES);
   const [periodFilter, setPeriodFilter] = useState('all');
 
   useEffect(() => {
@@ -30,37 +30,47 @@ export default function Dashboard() {
     setLoading(true);
     fetch('/api/data')
       .then(r => r.json())
-      .then(d => { if (d.error) throw new Error(d.error); setData(d); setLoading(false); })
-      .catch(e => { setError(e.message); setLoading(false); });
+      .then(d => {
+        if (d.error) throw new Error(d.error);
+        setData(d);
+        setLoading(false);
+      })
+      .catch(e => {
+        setError(e.message);
+        setLoading(false);
+      });
   };
 
   useEffect(() => { fetchData(); }, []);
 
   const toggle = (c) => setSelected(prev =>
-    prev.includes(c) ? (prev.length > 1 ? prev.filter(x => x !== c) : prev) : [...prev, c]
+    prev.includes(c)
+      ? (prev.length > 1 ? prev.filter(x => x !== c) : prev)
+      : [...prev, c]
   );
 
   const filterByPeriod = (rows) => {
     if (!rows) return [];
-    const now = new Date();
+    const now        = new Date();
+    const nowYear    = now.getFullYear();
+    const nowMonth   = now.getMonth(); // 0-indexed
+
     return rows.filter(r => {
+      if (!r.period) return false;
       if (periodFilter === 'all')  return true;
-      if (periodFilter === '2025') return r.period?.startsWith('2025');
-      if (periodFilter === '2026') return r.period?.startsWith('2026');
-      if (periodFilter === 'l3m') {
-        const d    = new Date(r.period + '-01');
-        const diff = (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth());
-        return diff <= 3;
-      }
-      if (periodFilter === 'l6m') {
-        const d    = new Date(r.period + '-01');
-        const diff = (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth());
-        return diff <= 6;
+      if (periodFilter === '2025') return r.period.startsWith('2025');
+      if (periodFilter === '2026') return r.period.startsWith('2026');
+      if (periodFilter === 'l3m' || periodFilter === 'l6m') {
+        const [y, m]     = r.period.split('-').map(Number);
+        const monthsDiff = (nowYear - y) * 12 + (nowMonth + 1 - m);
+        const limit      = periodFilter === 'l3m' ? 3 : 6;
+        return monthsDiff >= 0 && monthsDiff <= limit;
       }
       return true;
     });
   };
 
+  // ── Loading ───────────────────────────────────────────────────
   if (loading) return (
     <div className={dark ? 'dark' : ''}>
       <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center">
@@ -72,6 +82,7 @@ export default function Dashboard() {
     </div>
   );
 
+  // ── Error ─────────────────────────────────────────────────────
   if (error) return (
     <div className={dark ? 'dark' : ''}>
       <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center p-6">
@@ -87,11 +98,18 @@ export default function Dashboard() {
     </div>
   );
 
+  // ── Data ──────────────────────────────────────────────────────
   const { summary, byCountry, byCountryMonth, monthlyTotal, growth, meta } = data;
 
-  // Apply period filter
-  const filteredMonthlyTotal   = filterByPeriod(monthlyTotal);
-  const filteredByCountryMonth = filterByPeriod(byCountryMonth).filter(r => selected.includes(r.country));
+  // Exclude current partial month from all calculations
+  const now           = new Date();
+  const currentPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const cleanMonthlyTotal   = monthlyTotal.filter(m => m.period !== currentPeriod);
+  const cleanByCountryMonth = byCountryMonth.filter(r => r.period !== currentPeriod);
+
+  // Apply period filter on clean data
+  const filteredMonthlyTotal   = filterByPeriod(cleanMonthlyTotal);
+  const filteredByCountryMonth = filterByPeriod(cleanByCountryMonth).filter(r => selected.includes(r.country));
   const filteredPeriods        = filteredMonthlyTotal.map(m => m.period);
 
   // KPI MoM based on filtered data
@@ -100,7 +118,7 @@ export default function Dashboard() {
   const lastMoM   = lastMonth && prevMonth && prevMonth.gmv > 0
     ? ((lastMonth.gmv - prevMonth.gmv) / prevMonth.gmv * 100) : null;
 
-  // Filtered summary
+  // Filtered KPI summary
   const filteredGMV    = filteredMonthlyTotal.reduce((s, m) => s + m.gmv, 0);
   const filteredOrders = filteredMonthlyTotal.reduce((s, m) => s + m.orders, 0);
   const filteredAOV    = filteredOrders > 0 ? filteredGMV / filteredOrders : 0;
@@ -110,7 +128,7 @@ export default function Dashboard() {
       <Head><title>Glovo Beauty Africa</title></Head>
       <div className="min-h-screen bg-gray-50 dark:bg-gray-950 transition-colors">
 
-        {/* Header */}
+        {/* ── Header ────────────────────────────────────────── */}
         <header className="sticky top-0 z-50 bg-white/90 dark:bg-gray-900/90 backdrop-blur border-b border-gray-200 dark:border-gray-700">
           <div className="max-w-screen-2xl mx-auto px-6 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -118,18 +136,28 @@ export default function Dashboard() {
                 <span className="text-sm font-black text-black">G</span>
               </div>
               <div>
-                <h1 className="font-black text-gray-900 dark:text-white text-sm">Beauty Africa · Retail</h1>
+                <h1 className="font-black text-gray-900 dark:text-white text-sm">
+                  Beauty Africa · Retail
+                </h1>
                 <p className="text-xs text-gray-400">
-                  {filteredPeriods[0] || meta?.periodStart} → {filteredPeriods[filteredPeriods.length - 1] || meta?.periodEnd} · {meta?.totalRows?.toLocaleString()} rows
+                  {filteredPeriods[0] || meta?.periodStart} → {filteredPeriods[filteredPeriods.length - 1] || meta?.periodEnd}
+                  &nbsp;·&nbsp;{meta?.totalRows?.toLocaleString()} rows
+                  &nbsp;·&nbsp;<span className="text-orange-400">⚠️ {currentPeriod} excluded (partial)</span>
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-3">
               <div className="w-2 h-2 rounded-full bg-green-500" />
-              <button onClick={fetchData} className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-medium">
+              <button
+                onClick={fetchData}
+                className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+              >
                 ↻ Refresh
               </button>
-              <button onClick={() => setDark(!dark)} className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-medium">
+              <button
+                onClick={() => setDark(!dark)}
+                className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+              >
                 {dark ? '☀️ Light' : '🌙 Dark'}
               </button>
             </div>
@@ -138,12 +166,12 @@ export default function Dashboard() {
 
         <main className="max-w-screen-2xl mx-auto px-6 py-8 space-y-6">
 
-          {/* KPIs — update to use filtered values */}
+          {/* ── KPIs ──────────────────────────────────────────── */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <KPICard
               title="Total Retail GMV"
               value={fmt(filteredGMV)}
-              subtitle={`${filteredPeriods[0] || meta?.periodStart} → ${filteredPeriods[filteredPeriods.length-1] || meta?.periodEnd}`}
+              subtitle={`${filteredPeriods[0] || meta?.periodStart} → ${filteredPeriods[filteredPeriods.length - 1] || meta?.periodEnd}`}
               trend={lastMoM}
               icon="💄"
               accent="yellow"
@@ -175,31 +203,41 @@ export default function Dashboard() {
             />
           </div>
 
-          {/* Filters row */}
+          {/* ── Filters ───────────────────────────────────────── */}
           <div className="flex flex-wrap gap-6">
 
             {/* Country filter */}
             <div className="flex flex-wrap gap-2 items-center">
-              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Markets:</span>
+              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                Markets:
+              </span>
               {COUNTRIES.map(c => (
-                <button key={c} onClick={() => toggle(c)}
+                <button
+                  key={c}
+                  onClick={() => toggle(c)}
                   className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
-                    selected.includes(c) ? 'text-black shadow-sm' : 'bg-gray-100 dark:bg-gray-800 text-gray-400'
+                    selected.includes(c)
+                      ? 'text-black shadow-sm'
+                      : 'bg-gray-100 dark:bg-gray-800 text-gray-400'
                   }`}
-                  style={selected.includes(c) ? { background: COUNTRY_META[c]?.color } : {}}>
+                  style={selected.includes(c) ? { background: COUNTRY_META[c]?.color } : {}}
+                >
                   {COUNTRY_META[c]?.flag} {c}
                 </button>
               ))}
               <button
                 onClick={() => setSelected(COUNTRIES)}
-                className="px-3 py-1.5 rounded-full text-xs font-bold bg-gray-100 dark:bg-gray-800 text-gray-400 ml-1">
+                className="px-3 py-1.5 rounded-full text-xs font-bold bg-gray-100 dark:bg-gray-800 text-gray-400 ml-1 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+              >
                 All
               </button>
             </div>
 
             {/* Period filter */}
             <div className="flex flex-wrap gap-2 items-center">
-              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Period:</span>
+              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                Period:
+              </span>
               {PERIOD_FILTERS.map(f => (
                 <button
                   key={f.value}
@@ -207,15 +245,16 @@ export default function Dashboard() {
                   className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
                     periodFilter === f.value
                       ? 'bg-gray-800 dark:bg-white text-white dark:text-gray-900'
-                      : 'bg-gray-100 dark:bg-gray-800 text-gray-400'
-                  }`}>
+                      : 'bg-gray-100 dark:bg-gray-800 text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+                  }`}
+                >
                   {f.label}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Charts row 1 */}
+          {/* ── Charts Row 1 ──────────────────────────────────── */}
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
             <GMVTrendChart
               byCountryMonth={filteredByCountryMonth}
@@ -224,7 +263,7 @@ export default function Dashboard() {
             <MonthlyTotalChart monthlyTotal={filteredMonthlyTotal} />
           </div>
 
-          {/* Charts row 2 */}
+          {/* ── Charts Row 2 ──────────────────────────────────── */}
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
             <CountryShareChart
               byCountry={byCountry.filter(c => selected.includes(c.country))}
@@ -236,7 +275,7 @@ export default function Dashboard() {
             />
           </div>
 
-          {/* Table */}
+          {/* ── Country Table ──────────────────────────────────── */}
           <CountryTable
             byCountry={byCountry}
             growth={growth}
@@ -244,7 +283,7 @@ export default function Dashboard() {
             totalOrders={summary.totalOrders}
           />
 
-          {/* Insights */}
+          {/* ── Insights ──────────────────────────────────────── */}
           <InsightsPanel
             summary={summary}
             byCountry={byCountry}
