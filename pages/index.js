@@ -385,6 +385,7 @@ export default function Dashboard() {
             byVertical={filteredByVertical}
             byVerticalCountryMonth={filterByPeriod(byVerticalCountryMonth || [])
               .filter(r => selected.includes(r.country))}
+            selectedCountries={selected}
           />
 
           {/* ── Country Table ──────────────────────────────────────── */}
