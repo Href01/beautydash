@@ -154,56 +154,94 @@ export function GrowthChart({ growth, selectedCountries, filteredPeriods }) {
   );
 }
 
-// ── Retail vs MFC Chart ────────────────────────────────────────
-export function RetailVsMFCChart({ byVertical, byVerticalCountryMonth, selectedCountries }) {
-  // Monthly total by vertical
+// ── Vertical Comparison Chart ──────────────────────────────────
+const VERTICAL_COLORS = { Retail: '#FFC244', MFC: '#00A082', Groceries: '#3B82F6' };
+
+export function VerticalComparisonChart({ byVertical, byVerticalCountryMonth, selectedCountries }) {
+  // Discover verticals present in data (no hardcoding)
+  const verticals = [...new Set(byVertical.map(r => r.vertical))].sort();
+
+  // Monthly totals per vertical
   const monthlyMap = {};
   byVertical.forEach(r => {
-    if (!monthlyMap[r.period]) monthlyMap[r.period] = { period: r.period, Retail: 0, MFC: 0 };
+    if (!monthlyMap[r.period]) {
+      monthlyMap[r.period] = { period: r.period };
+      verticals.forEach(v => { monthlyMap[r.period][v] = 0; });
+    }
     monthlyMap[r.period][r.vertical] = r.gmv;
   });
   const monthlyData = Object.values(monthlyMap).sort((a, b) => a.period.localeCompare(b.period));
 
-  // Country breakdown by vertical — last available period
-  const periods      = [...new Set(byVerticalCountryMonth.map(r => r.period))].sort();
-  const latestPeriod = periods[periods.length - 1];
-  const countryMap   = {};
+  // Total per vertical for header KPIs
+  const totalByVertical = {};
+  verticals.forEach(v => {
+    totalByVertical[v] = byVertical.filter(r => r.vertical === v).reduce((s, r) => s + r.gmv, 0);
+  });
+  const grandTotal = Object.values(totalByVertical).reduce((s, v) => s + v, 0);
+
+  // Country breakdown — all periods, selected countries
+  const countryMap = {};
   byVerticalCountryMonth
     .filter(r => selectedCountries.includes(r.country))
     .forEach(r => {
-      if (!countryMap[r.country]) countryMap[r.country] = {
-        name: `${COUNTRY_META[r.country]?.flag || ''} ${r.country}`,
-        Retail: 0, MFC: 0,
-      };
-      countryMap[r.country][r.vertical] += r.gmv;
+      if (!countryMap[r.country]) {
+        countryMap[r.country] = { name: `${COUNTRY_META[r.country]?.flag || ''} ${r.country}` };
+        verticals.forEach(v => { countryMap[r.country][v] = 0; });
+      }
+      if (countryMap[r.country][r.vertical] !== undefined)
+        countryMap[r.country][r.vertical] += r.gmv;
     });
-  const countryData = Object.values(countryMap).sort((a, b) => (b.Retail + b.MFC) - (a.Retail + a.MFC));
+  const countryData = Object.values(countryMap).sort((a, b) => {
+    const aSum = verticals.reduce((s, v) => s + (a[v] || 0), 0);
+    const bSum = verticals.reduce((s, v) => s + (b[v] || 0), 0);
+    return bSum - aSum;
+  });
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
-      <div className="p-6 border-b border-gray-100 dark:border-gray-700">
-        <h3 className="font-bold text-gray-900 dark:text-white mb-0.5">Retail vs MFC</h3>
-        <p className="text-xs text-gray-400">Always shows both verticals — ignores vertical filter</p>
+      {/* Header with per-vertical KPI pills */}
+      <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex items-start justify-between gap-4">
+        <div>
+          <h3 className="font-bold text-gray-900 dark:text-white mb-0.5">Vertical Comparison</h3>
+          <p className="text-xs text-gray-400">All verticals · ignores vertical filter</p>
+        </div>
+        <div className="flex gap-6 flex-shrink-0">
+          {verticals.map(v => {
+            const color = VERTICAL_COLORS[v] || '#9CA3AF';
+            const pct   = grandTotal > 0 ? (totalByVertical[v] / grandTotal * 100).toFixed(1) : '0.0';
+            return (
+              <div key={v} className="text-right">
+                <p className="text-xs font-bold mb-0.5" style={{ color }}>{v}</p>
+                <p className="text-sm font-bold text-gray-900 dark:text-white">{fmt(totalByVertical[v] || 0)}</p>
+                <p className="text-xs text-gray-400">{pct}% of GMV</p>
+              </div>
+            );
+          })}
+        </div>
       </div>
+
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-0 divide-y xl:divide-y-0 xl:divide-x divide-gray-100 dark:divide-gray-700">
 
-        {/* Monthly trend */}
+        {/* Monthly trend — lines for easy comparison */}
         <div className="p-6">
           <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">Monthly GMV trend</p>
           <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={monthlyData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+            <LineChart data={monthlyData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
               <CartesianGrid {...gridStyle} />
               <XAxis dataKey="period" tick={axisStyle} tickLine={false} axisLine={false} />
               <YAxis tickFormatter={fmt} tick={axisStyle} tickLine={false} axisLine={false} width={65} />
               <Tooltip content={<ChartTooltip />} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="Retail" fill="#FFC244" radius={[4, 4, 0, 0]} stackId="a" />
-              <Bar dataKey="MFC"    fill="#00A082" radius={[4, 4, 0, 0]} stackId="a" />
-            </BarChart>
+              {verticals.map(v => (
+                <Line key={v} type="monotone" dataKey={v}
+                  stroke={VERTICAL_COLORS[v] || '#9CA3AF'} strokeWidth={2.5}
+                  dot={false} activeDot={{ r: 4 }} connectNulls />
+              ))}
+            </LineChart>
           </ResponsiveContainer>
         </div>
 
-        {/* By country */}
+        {/* Country breakdown — horizontal stacked bars */}
         <div className="p-6">
           <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">
             GMV by country · all periods
@@ -215,8 +253,10 @@ export function RetailVsMFCChart({ byVertical, byVerticalCountryMonth, selectedC
               <YAxis type="category" dataKey="name" tick={{ ...axisStyle, fontSize: 13 }} tickLine={false} axisLine={false} width={55} />
               <Tooltip content={<ChartTooltip />} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="Retail" fill="#FFC244" radius={[0, 0, 0, 0]} stackId="a" />
-              <Bar dataKey="MFC"    fill="#00A082" radius={[0, 4, 4, 0]} stackId="a" />
+              {verticals.map((v, i) => (
+                <Bar key={v} dataKey={v} fill={VERTICAL_COLORS[v] || '#9CA3AF'} stackId="a"
+                  radius={i === verticals.length - 1 ? [0, 4, 4, 0] : [0, 0, 0, 0]} />
+              ))}
             </BarChart>
           </ResponsiveContainer>
         </div>

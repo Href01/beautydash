@@ -3,7 +3,7 @@ import Head from 'next/head';
 import KPICard from '../components/KPICard';
 import CountryTable from '../components/CountryTable';
 import InsightsPanel from '../components/InsightsPanel';
-import { GMVTrendChart, MonthlyTotalChart, CountryShareChart, GrowthChart, RetailVsMFCChart } from '../components/Charts';
+import { GMVTrendChart, MonthlyTotalChart, CountryShareChart, GrowthChart, VerticalComparisonChart } from '../components/Charts';
 import { fmt, COUNTRIES, COUNTRY_META } from '../lib/constants';
 
 const PERIOD_FILTERS = [
@@ -382,14 +382,14 @@ export default function Dashboard() {
           </div>
 
           {/* ── Retail vs MFC (always shows both verticals) ───────── */}
-          <RetailVsMFCChart
+          <VerticalComparisonChart
             byVertical={filteredByVertical}
             byVerticalCountryMonth={filterByPeriod(byVerticalCountryMonth || [])
               .filter(r => selected.includes(r.country))}
             selectedCountries={selected}
           />
 
-          {/* ── Country Table ──────────────────────────────────────── */}
+          {/* ── Country Table ───────────────────────────────────────── */}
           <CountryTable
             byCountry={filteredByCountry}
             byCountryMonth={filterByPeriod(getCountryMonthSource())}
