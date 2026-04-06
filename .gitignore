@@ -34,3 +34,5 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+data-ux-analytics-8e2d661f33fb.json
+*.json
