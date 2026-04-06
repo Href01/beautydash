@@ -90,7 +90,10 @@ export default function Dashboard() {
           <div className="text-5xl mb-4">⚠️</div>
           <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Connection Error</h2>
           <p className="text-sm text-red-500 mb-4 font-mono bg-red-50 dark:bg-red-900/20 p-3 rounded-lg">{error}</p>
-          <button onClick={fetchData} className="px-4 py-2 bg-yellow-400 text-black font-bold rounded-lg text-sm">
+          <button
+            onClick={fetchData}
+            className="px-4 py-2 bg-yellow-400 text-black font-bold rounded-lg text-sm"
+          >
             Retry
           </button>
         </div>
@@ -98,7 +101,7 @@ export default function Dashboard() {
     </div>
   );
 
-  // ── Data ──────────────────────────────────────────────────────
+  // ── Data processing ───────────────────────────────────────────
   const { summary, byCountry, byCountryMonth, monthlyTotal, growth, meta } = data;
 
   // Exclude current partial month from all calculations
@@ -112,15 +115,30 @@ export default function Dashboard() {
   const filteredByCountryMonth = filterByPeriod(cleanByCountryMonth).filter(r => selected.includes(r.country));
   const filteredPeriods        = filteredMonthlyTotal.map(m => m.period);
 
-  // KPI MoM based on filtered data
+  // Recalculate byCountry from filtered periods
+  // This ensures % GMV always adds up to 100% and matches the selected period
+  const filteredByCountry = COUNTRIES.map(country => {
+    const rows   = filterByPeriod(cleanByCountryMonth).filter(r => r.country === country);
+    const gmv    = rows.reduce((s, r) => s + r.gmv, 0);
+    const orders = rows.reduce((s, r) => s + r.orders, 0);
+    return {
+      country,
+      gmv,
+      orders,
+      aov: orders > 0 ? gmv / orders : 0,
+    };
+  }).filter(c => c.gmv > 0 || c.orders > 0);
+
+  // KPI MoM — based on last two months of filtered data
   const lastMonth = filteredMonthlyTotal?.[filteredMonthlyTotal.length - 1];
   const prevMonth = filteredMonthlyTotal?.[filteredMonthlyTotal.length - 2];
   const lastMoM   = lastMonth && prevMonth && prevMonth.gmv > 0
-    ? ((lastMonth.gmv - prevMonth.gmv) / prevMonth.gmv * 100) : null;
+    ? ((lastMonth.gmv - prevMonth.gmv) / prevMonth.gmv * 100)
+    : null;
 
-  // Filtered KPI summary
-  const filteredGMV    = filteredMonthlyTotal.reduce((s, m) => s + m.gmv, 0);
-  const filteredOrders = filteredMonthlyTotal.reduce((s, m) => s + m.orders, 0);
+  // Filtered KPI summary — derived from filteredByCountry so everything is consistent
+  const filteredGMV    = filteredByCountry.reduce((s, c) => s + c.gmv, 0);
+  const filteredOrders = filteredByCountry.reduce((s, c) => s + c.orders, 0);
   const filteredAOV    = filteredOrders > 0 ? filteredGMV / filteredOrders : 0;
 
   return (
@@ -128,7 +146,7 @@ export default function Dashboard() {
       <Head><title>Glovo Beauty Africa</title></Head>
       <div className="min-h-screen bg-gray-50 dark:bg-gray-950 transition-colors">
 
-        {/* ── Header ────────────────────────────────────────── */}
+        {/* ── Header ────────────────────────────────────────────── */}
         <header className="sticky top-0 z-50 bg-white/90 dark:bg-gray-900/90 backdrop-blur border-b border-gray-200 dark:border-gray-700">
           <div className="max-w-screen-2xl mx-auto px-6 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -140,14 +158,20 @@ export default function Dashboard() {
                   Beauty Africa · Retail
                 </h1>
                 <p className="text-xs text-gray-400">
-                  {filteredPeriods[0] || meta?.periodStart} → {filteredPeriods[filteredPeriods.length - 1] || meta?.periodEnd}
-                  &nbsp;·&nbsp;{meta?.totalRows?.toLocaleString()} rows
-                  &nbsp;·&nbsp;<span className="text-orange-400">⚠️ {currentPeriod} excluded (partial)</span>
+                  {filteredPeriods[0] || meta?.periodStart}
+                  {' → '}
+                  {filteredPeriods[filteredPeriods.length - 1] || meta?.periodEnd}
+                  {' · '}
+                  {meta?.totalRows?.toLocaleString()} rows
+                  {' · '}
+                  <span className="text-orange-400">
+                    ⚠️ {currentPeriod} excluded (partial)
+                  </span>
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <div className="w-2 h-2 rounded-full bg-green-500" />
+              <div className="w-2 h-2 rounded-full bg-green-500" title="Live data" />
               <button
                 onClick={fetchData}
                 className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
@@ -166,7 +190,7 @@ export default function Dashboard() {
 
         <main className="max-w-screen-2xl mx-auto px-6 py-8 space-y-6">
 
-          {/* ── KPIs ──────────────────────────────────────────── */}
+          {/* ── KPIs ──────────────────────────────────────────────── */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <KPICard
               title="Total Retail GMV"
@@ -195,15 +219,15 @@ export default function Dashboard() {
             />
             <KPICard
               title="Active Markets"
-              value={`${summary.countries} / 6`}
-              subtitle={byCountry.map(c => c.country).join(' · ')}
+              value={`${filteredByCountry.length} / 6`}
+              subtitle={filteredByCountry.map(c => c.country).join(' · ')}
               icon="🌍"
               accent="gray"
               delay={240}
             />
           </div>
 
-          {/* ── Filters ───────────────────────────────────────── */}
+          {/* ── Filters ───────────────────────────────────────────── */}
           <div className="flex flex-wrap gap-6">
 
             {/* Country filter */}
@@ -254,19 +278,21 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* ── Charts Row 1 ──────────────────────────────────── */}
+          {/* ── Charts Row 1 ──────────────────────────────────────── */}
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
             <GMVTrendChart
               byCountryMonth={filteredByCountryMonth}
               selectedCountries={selected}
             />
-            <MonthlyTotalChart monthlyTotal={filteredMonthlyTotal} />
+            <MonthlyTotalChart
+              monthlyTotal={filteredMonthlyTotal}
+            />
           </div>
 
-          {/* ── Charts Row 2 ──────────────────────────────────── */}
+          {/* ── Charts Row 2 ──────────────────────────────────────── */}
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
             <CountryShareChart
-              byCountry={byCountry.filter(c => selected.includes(c.country))}
+              byCountry={filteredByCountry.filter(c => selected.includes(c.country))}
             />
             <GrowthChart
               growth={growth}
@@ -275,19 +301,19 @@ export default function Dashboard() {
             />
           </div>
 
-          {/* ── Country Table ──────────────────────────────────── */}
-<CountryTable
-  byCountry={byCountry}
-  byCountryMonth={cleanByCountryMonth}
-  filteredPeriods={filteredPeriods}
-  totalGMV={filteredGMV}
-  totalOrders={filteredOrders}
-/>
+          {/* ── Country Table ──────────────────────────────────────── */}
+          <CountryTable
+            byCountry={filteredByCountry}
+            byCountryMonth={filterByPeriod(cleanByCountryMonth)}
+            filteredPeriods={filteredPeriods}
+            totalGMV={filteredGMV}
+            totalOrders={filteredOrders}
+          />
 
-          {/* ── Insights ──────────────────────────────────────── */}
+          {/* ── Insights ──────────────────────────────────────────── */}
           <InsightsPanel
             summary={summary}
-            byCountry={byCountry}
+            byCountry={filteredByCountry}
             growth={growth}
             monthlyTotal={filteredMonthlyTotal}
           />
