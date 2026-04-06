@@ -3,6 +3,7 @@ import { google } from 'googleapis';
 const SPREADSHEET_ID = process.env.GOOGLE_SPREADSHEET_ID;
 
 // Per-source column mappings
+// spreadsheetId is optional — defaults to SPREADSHEET_ID env var
 const SOURCES = [
   {
     tab:      'Reta-CTRY',
@@ -26,8 +27,18 @@ const SOURCES = [
       orders:  'products_sold_v2_total_orders_no_remake_or_split',
     }
   },
-  // ADD MORE:
-  // { tab: 'Groc-CTRY', vertical: 'Groceries', columns: {...} },
+  {
+    spreadsheetId: '19NJjIiVy777q6CmT8sDbzYCMYWZ3XyIrGWvHfgIMX6o',
+    tab:      'Groceries-CTRY',
+    vertical: 'Groceries',
+    columns: {
+      country: 'cities_country_code',
+      month:   'bought_products_order_started_local_month',
+      year:    'bought_products_order_started_local_year',
+      gmv:     'bought_products_products_value_delivered_eur',
+      orders:  'bought_products_number_of_distinct_delivered_orders',
+    }
+  },
 ];
 
 function r2(v) { return Math.round(v * 100) / 100; }
@@ -253,19 +264,32 @@ export default async function handler(req, res) {
 
     const sheets = google.sheets({ version: 'v4', auth });
 
-    // Read all tabs in parallel
-    const ranges   = SOURCES.map(s => `${s.tab}!A:E`);
-    const response = await sheets.spreadsheets.values.batchGet({
-      spreadsheetId: SPREADSHEET_ID,
-      ranges,
+    // Group sources by spreadsheet ID, then fetch each spreadsheet in parallel
+    const bySheet = {};
+    SOURCES.forEach((s, i) => {
+      const id = s.spreadsheetId || SPREADSHEET_ID;
+      if (!bySheet[id]) bySheet[id] = [];
+      bySheet[id].push({ ...s, _idx: i });
     });
+
+    const sheetEntries = Object.entries(bySheet);
+    const responses = await Promise.all(
+      sheetEntries.map(([id, sources]) =>
+        sheets.spreadsheets.values.batchGet({
+          spreadsheetId: id,
+          ranges: sources.map(s => `${s.tab}!A:E`),
+        }).then(res => ({ sources, valueRanges: res.data.valueRanges || [] }))
+      )
+    );
 
     // Parse all rows from all sources
     let allRows = [];
-    (response.data.valueRanges || []).forEach((valueRange, i) => {
-      const source = SOURCES[i];
-      const rows   = readRows(valueRange.values, source.vertical, source.columns);
-      allRows      = allRows.concat(rows);
+    responses.forEach(({ sources, valueRanges }) => {
+      valueRanges.forEach((valueRange, i) => {
+        const source = sources[i];
+        const rows   = readRows(valueRange.values, source.vertical, source.columns);
+        allRows      = allRows.concat(rows);
+      });
     });
 
     if (allRows.length === 0) {

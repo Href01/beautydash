@@ -16,9 +16,10 @@ const PERIOD_FILTERS = [
 ];
 
 const VERTICAL_FILTERS = [
-  { label: 'All',    value: 'all' },
-  { label: 'Retail', value: 'Retail' },
-  { label: 'MFC',    value: 'MFC' },
+  { label: 'All',       value: 'all' },
+  { label: 'Retail',    value: 'Retail' },
+  { label: 'MFC',       value: 'MFC' },
+  { label: 'Groceries', value: 'Groceries' },
 ];
 
 export default function Dashboard() {

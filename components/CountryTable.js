@@ -1,5 +1,51 @@
 import { fmt, fmtPct, trendColor, COUNTRY_META, COUNTRY_STATUS } from '../lib/constants';
 
+function getSmartInsight(row, g, gmvPct, byCountryMonth, byCountry, filteredPeriods) {
+  const signals = [];
+
+  // ── GMV share signals ──────────────────────────────────────────
+  if (gmvPct > 45) signals.push({ p: 10, text: `Dominant market — ${gmvPct.toFixed(0)}% of portfolio GMV` });
+  if (gmvPct < 5)  signals.push({ p: 7,  text: `Smallest market — ${gmvPct.toFixed(1)}% share, room to scale` });
+
+  // ── Growth signals ─────────────────────────────────────────────
+  if (g) {
+    if (g.gmvGrowth >  150) signals.push({ p: 9, text: `Hyper-growth +${g.gmvGrowth.toFixed(0)}% over period — sustain momentum` });
+    else if (g.gmvGrowth > 60)  signals.push({ p: 8, text: `Strong growth +${g.gmvGrowth.toFixed(0)}% — investigate drivers` });
+    else if (g.gmvGrowth < -30) signals.push({ p: 9, text: `Sharp decline ${fmtPct(g.gmvGrowth)} — flag for action` });
+    else if (g.gmvGrowth < 0)   signals.push({ p: 6, text: `Mild decline ${fmtPct(g.gmvGrowth)} — monitor closely` });
+    else if (Math.abs(g.gmvGrowth) < 5) signals.push({ p: 5, text: `Flat growth (${fmtPct(g.gmvGrowth)}) — audit catalogue & partners` });
+  }
+
+  // ── AOV rank signals ───────────────────────────────────────────
+  const sorted = [...byCountry].sort((a, b) => b.aov - a.aov);
+  const aovRank = sorted.findIndex(c => c.country === row.country);
+  if (aovRank === 0) signals.push({ p: 6, text: `Highest AOV (€${row.aov.toFixed(2)}) — premium positioning` });
+  if (aovRank === sorted.length - 1 && sorted.length > 2)
+    signals.push({ p: 6, text: `Lowest AOV (€${row.aov.toFixed(2)}) — fix pricing or SKU mix` });
+
+  // ── Recent momentum vs overall trend ──────────────────────────
+  if (byCountryMonth && filteredPeriods?.length >= 4) {
+    const recent = filteredPeriods.slice(-3);
+    const countryRows = byCountryMonth.filter(r => r.country === row.country);
+    const recentRows  = countryRows.filter(r => recent.includes(r.period));
+    if (recentRows.length >= 2) {
+      const first = recentRows[0].gmv;
+      const last  = recentRows[recentRows.length - 1].gmv;
+      const recentGrowth = first > 0 ? (last - first) / first * 100 : null;
+      if (recentGrowth !== null && g) {
+        if (recentGrowth > g.gmvGrowth + 30)
+          signals.push({ p: 8, text: `Accelerating — last 3M trend (+${recentGrowth.toFixed(0)}%) ahead of period avg` });
+        else if (recentGrowth < g.gmvGrowth - 30 && g.gmvGrowth > 0)
+          signals.push({ p: 8, text: `Decelerating — last 3M trend (${fmtPct(recentGrowth)}) below period avg` });
+      }
+    }
+  }
+
+  if (!signals.length) return '—';
+  signals.sort((a, b) => b.p - a.p);
+  return signals[0].text;
+}
+
 export default function CountryTable({ byCountry, byCountryMonth, filteredPeriods, totalGMV, totalOrders }) {
   if (!byCountry?.length) return null;
 
@@ -117,7 +163,7 @@ export default function CountryTable({ byCountry, byCountryMonth, filteredPeriod
                     </span>
                   </td>
                   <td className="px-5 py-4 text-xs text-gray-400 max-w-xs">
-                    {status.insight}
+                    {getSmartInsight(row, g, gmvPct, byCountryMonth, byCountry, filteredPeriods)}
                   </td>
                 </tr>
               );
