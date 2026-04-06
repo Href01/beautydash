@@ -175,14 +175,17 @@ export default function Dashboard() {
   const lastMoM   = lastMonth && prevMonth && prevMonth.gmv > 0
     ? ((lastMonth.gmv - prevMonth.gmv) / prevMonth.gmv * 100) : null;
 
-  // ── Vertical breakdown (always ignores vertical filter) ───────
+  // ── Vertical breakdown (respects period + country filters) ──────
+  const filteredVCM = filterByPeriod(byVerticalCountryMonth || [])
+    .filter(r => selected.includes(r.country));
 
-  const retailGMV = filterByPeriod(byVerticalCountryMonth || [])
-    .filter(v => v.vertical === 'Retail')
-    .reduce((s, v) => s + v.gmv, 0);
-  const mfcGMV = filterByPeriod(byVerticalCountryMonth || [])
-    .filter(v => v.vertical === 'MFC')
-    .reduce((s, v) => s + v.gmv, 0);
+  const verticalGMV = {};
+  filteredVCM.forEach(r => {
+    verticalGMV[r.vertical] = (verticalGMV[r.vertical] || 0) + r.gmv;
+  });
+  const retailGMV    = verticalGMV['Retail']    || 0;
+  const mfcGMV       = verticalGMV['MFC']       || 0;
+  const groceriesGMV = verticalGMV['Groceries'] || 0;
 
   return (
     <div className={dark ? 'dark' : ''}>
@@ -270,7 +273,7 @@ export default function Dashboard() {
 
           {/* ── Vertical summary strip ─────────────────────────────── */}
           {verticalFilter === 'all' && (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div className="bg-white dark:bg-gray-800 rounded-xl p-4 flex items-center justify-between border-l-4 border-yellow-400">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Retail GMV</p>
@@ -290,6 +293,16 @@ export default function Dashboard() {
                   </p>
                 </div>
                 <span className="text-3xl">🏭</span>
+              </div>
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-4 flex items-center justify-between border-l-4 border-blue-500">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Groceries GMV</p>
+                  <p className="text-2xl font-black text-gray-900 dark:text-white">{fmt(groceriesGMV)}</p>
+                  <p className="text-xs text-gray-400">
+                    {filteredGMV > 0 ? (groceriesGMV / filteredGMV * 100).toFixed(1) : 0}% of total
+                  </p>
+                </div>
+                <span className="text-3xl">🛒</span>
               </div>
             </div>
           )}
@@ -391,6 +404,7 @@ export default function Dashboard() {
           <CountryTable
             byCountry={filteredByCountry}
             byCountryMonth={filterByPeriod(getCountryMonthSource())}
+            allByCountryMonth={(byCountryMonth || []).filter(r => selected.includes(r.country))}
             filteredPeriods={filteredPeriods}
             totalGMV={filteredGMV}
             totalOrders={filteredOrders}

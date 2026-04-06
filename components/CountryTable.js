@@ -9,11 +9,11 @@ function getSmartInsight(row, g, gmvPct, byCountryMonth, byCountry, filteredPeri
 
   // ── Growth signals ─────────────────────────────────────────────
   if (g) {
-    if (g.gmvGrowth >  150) signals.push({ p: 9, text: `Hyper-growth +${g.gmvGrowth.toFixed(0)}% over period — sustain momentum` });
-    else if (g.gmvGrowth > 60)  signals.push({ p: 8, text: `Strong growth +${g.gmvGrowth.toFixed(0)}% — investigate drivers` });
-    else if (g.gmvGrowth < -30) signals.push({ p: 9, text: `Sharp decline ${fmtPct(g.gmvGrowth)} — flag for action` });
-    else if (g.gmvGrowth < 0)   signals.push({ p: 6, text: `Mild decline ${fmtPct(g.gmvGrowth)} — monitor closely` });
-    else if (Math.abs(g.gmvGrowth) < 5) signals.push({ p: 5, text: `Flat growth (${fmtPct(g.gmvGrowth)}) — audit catalogue & partners` });
+    if (g.growth >  150) signals.push({ p: 9, text: `Hyper-growth +${g.growth.toFixed(0)}% over period — sustain momentum` });
+    else if (g.growth > 60)  signals.push({ p: 8, text: `Strong growth +${g.growth.toFixed(0)}% — investigate drivers` });
+    else if (g.growth < -30) signals.push({ p: 9, text: `Sharp decline ${fmtPct(g.growth)} — flag for action` });
+    else if (g.growth < 0)   signals.push({ p: 6, text: `Mild decline ${fmtPct(g.growth)} — monitor closely` });
+    else if (Math.abs(g.growth) < 5) signals.push({ p: 5, text: `Flat growth (${fmtPct(g.growth)}) — audit catalogue & partners` });
   }
 
   // ── AOV rank signals ───────────────────────────────────────────
@@ -33,9 +33,9 @@ function getSmartInsight(row, g, gmvPct, byCountryMonth, byCountry, filteredPeri
       const last  = recentRows[recentRows.length - 1].gmv;
       const recentGrowth = first > 0 ? (last - first) / first * 100 : null;
       if (recentGrowth !== null && g) {
-        if (recentGrowth > g.gmvGrowth + 30)
+        if (recentGrowth > g.growth + 30)
           signals.push({ p: 8, text: `Accelerating — last 3M trend (+${recentGrowth.toFixed(0)}%) ahead of period avg` });
-        else if (recentGrowth < g.gmvGrowth - 30 && g.gmvGrowth > 0)
+        else if (recentGrowth < g.growth - 30 && g.growth > 0)
           signals.push({ p: 8, text: `Decelerating — last 3M trend (${fmtPct(recentGrowth)}) below period avg` });
       }
     }
@@ -46,28 +46,23 @@ function getSmartInsight(row, g, gmvPct, byCountryMonth, byCountry, filteredPeri
   return signals[0].text;
 }
 
-export default function CountryTable({ byCountry, byCountryMonth, filteredPeriods, totalGMV, totalOrders }) {
+export default function CountryTable({ byCountry, byCountryMonth, allByCountryMonth, filteredPeriods, totalGMV, totalOrders }) {
   if (!byCountry?.length) return null;
 
-  // Recalculate growth from clean filtered data
-  // First period = filteredPeriods[0], Last period = filteredPeriods[last]
   const firstPeriod = filteredPeriods?.[0];
   const lastPeriod  = filteredPeriods?.[filteredPeriods.length - 1];
 
-  const getGrowth = (country) => {
-    if (!byCountryMonth || !firstPeriod || !lastPeriod) return null;
-
-    const firstRow = byCountryMonth.find(r => r.country === country && r.period === firstPeriod);
-    const lastRow  = byCountryMonth.find(r => r.country === country && r.period === lastPeriod);
-
-    if (!firstRow || !lastRow || firstRow.gmv === 0) return null;
-
+  // YoY: full 2024 vs full 2025 from unfiltered-by-period data
+  const getYoY = (country) => {
+    if (!allByCountryMonth) return null;
+    const rows = allByCountryMonth.filter(r => r.country === country);
+    const gmv2024 = rows.filter(r => r.period.startsWith('2024')).reduce((s, r) => s + r.gmv, 0);
+    const gmv2025 = rows.filter(r => r.period.startsWith('2025')).reduce((s, r) => s + r.gmv, 0);
+    if (!gmv2024 && !gmv2025) return null;
     return {
-      firstGMV:  firstRow.gmv,
-      lastGMV:   lastRow.gmv,
-      gmvGrowth: ((lastRow.gmv - firstRow.gmv) / firstRow.gmv * 100),
-      firstPeriod,
-      lastPeriod,
+      gmv2024,
+      gmv2025,
+      growth: gmv2024 > 0 ? ((gmv2025 - gmv2024) / gmv2024 * 100) : null,
     };
   };
 
@@ -77,7 +72,7 @@ export default function CountryTable({ byCountry, byCountryMonth, filteredPeriod
         <div>
           <h2 className="font-bold text-gray-900 dark:text-white">Country Breakdown</h2>
           <p className="text-xs text-gray-400 mt-0.5">
-            Retail vertical · {firstPeriod} → {lastPeriod}
+            {firstPeriod} → {lastPeriod} · YoY growth: 2024 vs 2025
           </p>
         </div>
         <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
@@ -94,10 +89,8 @@ export default function CountryTable({ byCountry, byCountryMonth, filteredPeriod
               <th className="px-5 py-3 text-right">Orders</th>
               <th className="px-5 py-3 text-right">AOV</th>
               <th className="px-5 py-3 text-right">
-                Growth
-                <span className="ml-1 text-gray-300 normal-case font-normal">
-                  ({firstPeriod} → {lastPeriod})
-                </span>
+                YoY Growth
+                <span className="ml-1 text-gray-300 normal-case font-normal">(2024 vs 2025)</span>
               </th>
               <th className="px-5 py-3 text-left">Status</th>
               <th className="px-5 py-3 text-left">Insight</th>
@@ -107,7 +100,7 @@ export default function CountryTable({ byCountry, byCountryMonth, filteredPeriod
             {[...byCountry].sort((a, b) => b.gmv - a.gmv).map(row => {
               const meta    = COUNTRY_META[row.country]  || {};
               const status  = COUNTRY_STATUS[row.country] || {};
-              const g       = getGrowth(row.country);
+              const g       = getYoY(row.country);
               const gmvPct  = totalGMV > 0 ? (row.gmv / totalGMV * 100) : 0;
 
               return (
@@ -146,11 +139,11 @@ export default function CountryTable({ byCountry, byCountryMonth, filteredPeriod
                   <td className="px-5 py-4 text-right">
                     {g ? (
                       <div className="flex flex-col items-end">
-                        <span className={`text-xs font-bold ${trendColor(g.gmvGrowth)}`}>
-                          {fmtPct(g.gmvGrowth)}
+                        <span className={`text-xs font-bold ${trendColor(g.growth)}`}>
+                          {fmtPct(g.growth)}
                         </span>
                         <span className="text-xs text-gray-400">
-                          {fmt(g.firstGMV)} → {fmt(g.lastGMV)}
+                          {fmt(g.gmv2024)} → {fmt(g.gmv2025)}
                         </span>
                       </div>
                     ) : (
