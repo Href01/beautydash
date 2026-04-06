@@ -22,12 +22,12 @@ const VERTICAL_FILTERS = [
 ];
 
 export default function Dashboard() {
-  const [data, setData]                   = useState(null);
-  const [loading, setLoading]             = useState(true);
-  const [error, setError]                 = useState(null);
-  const [dark, setDark]                   = useState(true);
-  const [selected, setSelected]           = useState(COUNTRIES);
-  const [periodFilter, setPeriodFilter]   = useState('all');
+  const [data, setData]                     = useState(null);
+  const [loading, setLoading]               = useState(true);
+  const [error, setError]                   = useState(null);
+  const [dark, setDark]                     = useState(true);
+  const [selected, setSelected]             = useState(COUNTRIES);
+  const [periodFilter, setPeriodFilter]     = useState('all');
   const [verticalFilter, setVerticalFilter] = useState('all');
 
   useEffect(() => {
@@ -56,32 +56,6 @@ export default function Dashboard() {
       ? (prev.length > 1 ? prev.filter(x => x !== c) : prev)
       : [...prev, c]
   );
-
-  const filterByPeriod = (rows) => {
-    if (!rows) return [];
-    const now      = new Date();
-    const nowYear  = now.getFullYear();
-    const nowMonth = now.getMonth();
-    return rows.filter(r => {
-      if (!r.period) return false;
-      if (periodFilter === 'all')  return true;
-      if (periodFilter === '2024') return r.period.startsWith('2024');
-      if (periodFilter === '2025') return r.period.startsWith('2025');
-      if (periodFilter === '2026') return r.period.startsWith('2026');
-      if (periodFilter === 'l3m' || periodFilter === 'l6m') {
-        const [y, m]     = r.period.split('-').map(Number);
-        const monthsDiff = (nowYear - y) * 12 + (nowMonth + 1 - m);
-        const limit      = periodFilter === 'l3m' ? 3 : 6;
-        return monthsDiff >= 0 && monthsDiff <= limit;
-      }
-      return true;
-    });
-  };
-
-  const filterByVertical = (rows) => {
-    if (!rows || verticalFilter === 'all') return rows;
-    return rows.filter(r => r.vertical === verticalFilter);
-  };
 
   // ── Loading ───────────────────────────────────────────────────
   if (loading) return (
@@ -112,48 +86,101 @@ export default function Dashboard() {
   );
 
   // ── Data processing ───────────────────────────────────────────
-  const { summary, byCountryMonth, byVertical, byVerticalCountryMonth, monthlyTotal, growth, meta } = data;
+  const {
+    summary,
+    byCountryMonth,
+    byVertical,
+    byVerticalCountryMonth,
+    monthlyTotal,
+    growth,
+    meta,
+  } = data;
 
-  const currentPeriod = meta?.currentPeriod || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+  const currentPeriod = meta?.currentPeriod ||
+    `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
 
-  // Apply all filters
-  const filteredMonthlyTotal = filterByPeriod(
-    filterByVertical(monthlyTotal)
-  );
+  // ── Period filter ─────────────────────────────────────────────
+  const filterByPeriod = (rows) => {
+    if (!rows) return [];
+    const now      = new Date();
+    const nowYear  = now.getFullYear();
+    const nowMonth = now.getMonth();
+    return rows.filter(r => {
+      if (!r.period) return false;
+      if (periodFilter === 'all')  return true;
+      if (periodFilter === '2024') return r.period.startsWith('2024');
+      if (periodFilter === '2025') return r.period.startsWith('2025');
+      if (periodFilter === '2026') return r.period.startsWith('2026');
+      if (periodFilter === 'l3m' || periodFilter === 'l6m') {
+        const [y, m]     = r.period.split('-').map(Number);
+        const monthsDiff = (nowYear - y) * 12 + (nowMonth + 1 - m);
+        const limit      = periodFilter === 'l3m' ? 3 : 6;
+        return monthsDiff >= 0 && monthsDiff <= limit;
+      }
+      return true;
+    });
+  };
 
-  const filteredByCountryMonth = filterByPeriod(
-    filterByVertical(byCountryMonth)
-  ).filter(r => selected.includes(r.country));
+  // ── Choose right data source based on vertical filter ─────────
+  // All     → byCountryMonth (pre-aggregated, no vertical field)
+  // Retail/MFC → byVerticalCountryMonth filtered by vertical
+  const getCountryMonthSource = () => {
+    if (verticalFilter === 'all') return byCountryMonth;
+    return (byVerticalCountryMonth || []).filter(r => r.vertical === verticalFilter);
+  };
 
-  const filteredPeriods = [...new Set(filteredMonthlyTotal.map(m => m.period))].sort();
+  const getMonthlyTotalSource = () => {
+    if (verticalFilter === 'all') return monthlyTotal;
+    // Rebuild monthly total from byVerticalCountryMonth for selected vertical
+    const filtered = (byVerticalCountryMonth || []).filter(r => r.vertical === verticalFilter);
+    const map = {};
+    filtered.forEach(r => {
+      if (!map[r.period]) map[r.period] = { period: r.period, gmv: 0, orders: 0 };
+      map[r.period].gmv    += r.gmv;
+      map[r.period].orders += r.orders;
+    });
+    const sorted = Object.values(map).sort((a, b) => a.period.localeCompare(b.period));
+    return sorted.map((m, i) => {
+      const prev = i > 0 ? sorted[i - 1] : null;
+      return {
+        ...m,
+        aov:       m.orders > 0 ? m.gmv / m.orders : 0,
+        momGMV:    prev && prev.gmv > 0    ? (m.gmv - prev.gmv) / prev.gmv * 100          : null,
+        momOrders: prev && prev.orders > 0 ? (m.orders - prev.orders) / prev.orders * 100 : null,
+      };
+    });
+  };
 
-  // Recalculate byCountry from filtered data
+  // ── Apply filters ─────────────────────────────────────────────
+  const filteredMonthlyTotal   = filterByPeriod(getMonthlyTotalSource());
+  const filteredByCountryMonth = filterByPeriod(getCountryMonthSource())
+    .filter(r => selected.includes(r.country));
+  const filteredPeriods        = [...new Set(filteredMonthlyTotal.map(m => m.period))].sort();
+
+  // ── Recalculate byCountry from filtered source ────────────────
   const filteredByCountry = COUNTRIES.map(country => {
-    const rows   = filterByPeriod(filterByVertical(byCountryMonth)).filter(r => r.country === country);
+    const rows   = filterByPeriod(getCountryMonthSource()).filter(r => r.country === country);
     const gmv    = rows.reduce((s, r) => s + r.gmv, 0);
     const orders = rows.reduce((s, r) => s + r.orders, 0);
     return { country, gmv, orders, aov: orders > 0 ? gmv / orders : 0 };
   }).filter(c => c.gmv > 0 || c.orders > 0);
 
-  // KPI summary from filtered data
+  // ── KPI summary ───────────────────────────────────────────────
   const filteredGMV    = filteredByCountry.reduce((s, c) => s + c.gmv, 0);
   const filteredOrders = filteredByCountry.reduce((s, c) => s + c.orders, 0);
   const filteredAOV    = filteredOrders > 0 ? filteredGMV / filteredOrders : 0;
 
-  // MoM for KPI card
   const lastMonth = filteredMonthlyTotal?.[filteredMonthlyTotal.length - 1];
   const prevMonth = filteredMonthlyTotal?.[filteredMonthlyTotal.length - 2];
   const lastMoM   = lastMonth && prevMonth && prevMonth.gmv > 0
     ? ((lastMonth.gmv - prevMonth.gmv) / prevMonth.gmv * 100) : null;
 
-  // Vertical comparison data — always show all verticals regardless of filter
-  const filteredByVertical = filterByPeriod(byVertical);
-
-  // Vertical KPI breakdown
-  const retailGMV = filterByPeriod(byVertical)
+  // ── Vertical breakdown (always ignores vertical filter) ───────
+  const filteredByVertical = filterByPeriod(byVertical || []);
+  const retailGMV = filterByPeriod(byVerticalCountryMonth || [])
     .filter(v => v.vertical === 'Retail')
     .reduce((s, v) => s + v.gmv, 0);
-  const mfcGMV = filterByPeriod(byVertical)
+  const mfcGMV = filterByPeriod(byVerticalCountryMonth || [])
     .filter(v => v.vertical === 'MFC')
     .reduce((s, v) => s + v.gmv, 0);
 
@@ -174,18 +201,28 @@ export default function Dashboard() {
                   Beauty Africa · {verticalFilter === 'all' ? 'All Verticals' : verticalFilter}
                 </h1>
                 <p className="text-xs text-gray-400">
-                  {filteredPeriods[0] || meta?.periodStart} → {filteredPeriods[filteredPeriods.length - 1] || meta?.periodEnd}
-                  &nbsp;·&nbsp;{meta?.totalRows?.toLocaleString()} rows
-                  &nbsp;·&nbsp;<span className="text-orange-400">⚠️ {currentPeriod} excluded</span>
+                  {filteredPeriods[0] || meta?.periodStart}
+                  {' → '}
+                  {filteredPeriods[filteredPeriods.length - 1] || meta?.periodEnd}
+                  {' · '}
+                  {meta?.totalRows?.toLocaleString()} rows
+                  {' · '}
+                  <span className="text-orange-400">⚠️ {currentPeriod} excluded</span>
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-3">
               <div className="w-2 h-2 rounded-full bg-green-500" />
-              <button onClick={fetchData} className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+              <button
+                onClick={fetchData}
+                className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+              >
                 ↻ Refresh
               </button>
-              <button onClick={() => setDark(!dark)} className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+              <button
+                onClick={() => setDark(!dark)}
+                className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+              >
                 {dark ? '☀️ Light' : '🌙 Dark'}
               </button>
             </div>
@@ -231,14 +268,16 @@ export default function Dashboard() {
             />
           </div>
 
-          {/* ── Vertical summary strip (only when All is selected) ── */}
+          {/* ── Vertical summary strip ─────────────────────────────── */}
           {verticalFilter === 'all' && (
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-white dark:bg-gray-800 rounded-xl p-4 flex items-center justify-between border-l-4 border-yellow-400">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Retail GMV</p>
                   <p className="text-2xl font-black text-gray-900 dark:text-white">{fmt(retailGMV)}</p>
-                  <p className="text-xs text-gray-400">{filteredGMV > 0 ? (retailGMV / filteredGMV * 100).toFixed(1) : 0}% of total</p>
+                  <p className="text-xs text-gray-400">
+                    {filteredGMV > 0 ? (retailGMV / filteredGMV * 100).toFixed(1) : 0}% of total
+                  </p>
                 </div>
                 <span className="text-3xl">🏪</span>
               </div>
@@ -246,7 +285,9 @@ export default function Dashboard() {
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-gray-400">MFC GMV</p>
                   <p className="text-2xl font-black text-gray-900 dark:text-white">{fmt(mfcGMV)}</p>
-                  <p className="text-xs text-gray-400">{filteredGMV > 0 ? (mfcGMV / filteredGMV * 100).toFixed(1) : 0}% of total</p>
+                  <p className="text-xs text-gray-400">
+                    {filteredGMV > 0 ? (mfcGMV / filteredGMV * 100).toFixed(1) : 0}% of total
+                  </p>
                 </div>
                 <span className="text-3xl">🏭</span>
               </div>
@@ -264,7 +305,9 @@ export default function Dashboard() {
                   key={c}
                   onClick={() => toggle(c)}
                   className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
-                    selected.includes(c) ? 'text-black shadow-sm' : 'bg-gray-100 dark:bg-gray-800 text-gray-400'
+                    selected.includes(c)
+                      ? 'text-black shadow-sm'
+                      : 'bg-gray-100 dark:bg-gray-800 text-gray-400'
                   }`}
                   style={selected.includes(c) ? { background: COUNTRY_META[c]?.color } : {}}
                 >
@@ -273,7 +316,7 @@ export default function Dashboard() {
               ))}
               <button
                 onClick={() => setSelected(COUNTRIES)}
-                className="px-3 py-1.5 rounded-full text-xs font-bold bg-gray-100 dark:bg-gray-800 text-gray-400 ml-1"
+                className="px-3 py-1.5 rounded-full text-xs font-bold bg-gray-100 dark:bg-gray-800 text-gray-400 ml-1 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
               >
                 All
               </button>
@@ -289,7 +332,7 @@ export default function Dashboard() {
                   className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
                     periodFilter === f.value
                       ? 'bg-gray-800 dark:bg-white text-white dark:text-gray-900'
-                      : 'bg-gray-100 dark:bg-gray-800 text-gray-400'
+                      : 'bg-gray-100 dark:bg-gray-800 text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
                   }`}
                 >
                   {f.label}
@@ -307,7 +350,7 @@ export default function Dashboard() {
                   className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
                     verticalFilter === f.value
                       ? 'bg-yellow-400 text-black shadow-sm'
-                      : 'bg-gray-100 dark:bg-gray-800 text-gray-400'
+                      : 'bg-gray-100 dark:bg-gray-800 text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
                   }`}
                 >
                   {f.label}
@@ -337,17 +380,17 @@ export default function Dashboard() {
             />
           </div>
 
-          {/* ── Retail vs MFC Chart (always visible, ignores vertical filter) ── */}
+          {/* ── Retail vs MFC (always shows both verticals) ───────── */}
           <RetailVsMFCChart
             byVertical={filteredByVertical}
-            selectedCountries={selected}
-            byVerticalCountryMonth={filterByPeriod(byVerticalCountryMonth).filter(r => selected.includes(r.country))}
+            byVerticalCountryMonth={filterByPeriod(byVerticalCountryMonth || [])
+              .filter(r => selected.includes(r.country))}
           />
 
           {/* ── Country Table ──────────────────────────────────────── */}
           <CountryTable
             byCountry={filteredByCountry}
-            byCountryMonth={filterByPeriod(filterByVertical(byCountryMonth))}
+            byCountryMonth={filterByPeriod(getCountryMonthSource())}
             filteredPeriods={filteredPeriods}
             totalGMV={filteredGMV}
             totalOrders={filteredOrders}
