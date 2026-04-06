@@ -19,6 +19,11 @@ function parseMonth(raw) {
   return parseInt(s);
 }
 
+function getCurrentPeriod() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
 function readRows(values) {
   if (!values || values.length < 2) return [];
   const headers = values[0];
@@ -113,8 +118,8 @@ function buildMonthlyTotal(rows) {
       gmv:       r2(m.gmv),
       orders:    m.orders,
       aov:       m.orders > 0 ? r2(m.gmv / m.orders) : 0,
-      momGMV:    prev && prev.gmv > 0    ? r2((m.gmv - prev.gmv) / prev.gmv * 100)             : null,
-      momOrders: prev && prev.orders > 0 ? r2((m.orders - prev.orders) / prev.orders * 100)    : null,
+      momGMV:    prev && prev.gmv > 0    ? r2((m.gmv - prev.gmv) / prev.gmv * 100)          : null,
+      momOrders: prev && prev.orders > 0 ? r2((m.orders - prev.orders) / prev.orders * 100) : null,
     };
   });
 }
@@ -132,6 +137,8 @@ function buildGrowth(rows) {
   periods.sort();
   const first = periods[0];
   const last  = periods[periods.length - 1];
+
+  // Period comparison — first vs last clean period
   const comparison = countries.map(c => {
     const f = byCP[`${c}_${first}`] || { gmv: 0, orders: 0 };
     const l = byCP[`${c}_${last}`]  || { gmv: 0, orders: 0 };
@@ -144,6 +151,8 @@ function buildGrowth(rows) {
       gmvGrowth:   f.gmv > 0 ? r2((l.gmv - f.gmv) / f.gmv * 100) : null,
     };
   });
+
+  // MoM per country
   const countryMoM = {};
   countries.forEach(c => {
     const cp = periods.map(p => byCP[`${c}_${p}`] || { country: c, period: p, gmv: 0, orders: 0 });
@@ -156,7 +165,27 @@ function buildGrowth(rows) {
       };
     });
   });
-  return { periodComparison: comparison, countryMoM };
+
+  // YoY per country — compare same month this year vs last year
+  const yoy = {};
+  countries.forEach(c => {
+    yoy[c] = periods.map(p => {
+      const [y, m]     = p.split('-').map(Number);
+      const prevYearP  = `${y - 1}-${String(m).padStart(2, '0')}`;
+      const current    = byCP[`${c}_${p}`]         || { gmv: 0, orders: 0 };
+      const prevYear   = byCP[`${c}_${prevYearP}`] || { gmv: 0, orders: 0 };
+      return {
+        period:      p,
+        gmv:         r2(current.gmv),
+        prevYearGMV: r2(prevYear.gmv),
+        yoyGMV:      prevYear.gmv > 0
+          ? r2((current.gmv - prevYear.gmv) / prevYear.gmv * 100)
+          : null,
+      };
+    });
+  });
+
+  return { periodComparison: comparison, countryMoM, yoy };
 }
 
 export default async function handler(req, res) {
@@ -164,7 +193,7 @@ export default async function handler(req, res) {
     const auth = new google.auth.GoogleAuth({
       credentials: {
         client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-        private_key: process.env.GOOGLE_PRIVATE_KEY?.split('\\n').join('\n'),
+        private_key:  process.env.GOOGLE_PRIVATE_KEY?.split('\\n').join('\n'),
       },
       scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
     });
@@ -175,21 +204,26 @@ export default async function handler(req, res) {
       range:         `${TAB_NAME}!A:E`,
     });
 
-    const rows = readRows(response.data.values);
+    const allRows = readRows(response.data.values);
 
-    if (rows.length === 0) {
+    if (allRows.length === 0) {
       return res.status(200).json({ error: 'No data found in sheet' });
     }
+
+    // Exclude current partial month from ALL calculations
+    const currentPeriod = getCurrentPeriod();
+    const rows          = allRows.filter(r => r.period !== currentPeriod);
 
     const periods = [...new Set(rows.map(r => r.period))].sort();
 
     const result = {
       meta: {
-        lastUpdated:  new Date().toISOString(),
-        totalRows:    rows.length,
-        periodStart:  periods[0],
-        periodEnd:    periods[periods.length - 1],
-        verticals:    ['Retail'],
+        lastUpdated:    new Date().toISOString(),
+        totalRows:      rows.length,
+        periodStart:    periods[0],
+        periodEnd:      periods[periods.length - 1],
+        currentPeriod:  currentPeriod,
+        verticals:      ['Retail'],
       },
       summary:        buildSummary(rows),
       byCountry:      buildByCountry(rows),
