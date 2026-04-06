@@ -155,7 +155,6 @@ export function GrowthChart({ growth, selectedCountries, filteredPeriods }) {
   const firstCountry = selectedCountries[0];
   if (!growth.countryMoM[firstCountry]) return null;
 
-  // Use only periods within the current filter + exclude current month
   const allPeriods = growth.countryMoM[firstCountry].map(m => m.period);
   const periods    = filteredPeriods?.length
     ? allPeriods.filter(p => filteredPeriods.includes(p))
@@ -168,7 +167,11 @@ export function GrowthChart({ growth, selectedCountries, filteredPeriods }) {
       point[c] = m?.momGMV ?? null;
     });
     return point;
-  }).slice(1); // skip first period — no MoM available
+  }).filter(point => {
+    // Remove point only if ALL countries have null MoM
+    // This handles the very first period of all-time data
+    return selectedCountries.some(c => point[c] !== null);
+  });
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm">
