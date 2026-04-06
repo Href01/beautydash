@@ -1,33 +1,47 @@
 import {
-  LineChart, Line, BarChart, Bar, AreaChart, Area,
+  LineChart, Line, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 import { fmt, COUNTRY_META } from '../lib/constants';
 
-const ChartTooltip = ({ active, payload, label }) => {
+// ── Tooltip ────────────────────────────────────────────────────
+const ChartTooltip = ({ active, payload, label, isPctChart }) => {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-3 shadow-xl text-xs min-w-[140px]">
       <p className="font-bold text-gray-700 dark:text-gray-200 mb-2">{label}</p>
-      {payload.map((entry, i) => (
-        <div key={i} className="flex items-center justify-between gap-4 mb-1">
-          <div className="flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full" style={{ background: entry.color }} />
-            <span className="text-gray-500 dark:text-gray-400">{entry.name}</span>
+      {payload.map((entry, i) => {
+        const isPct    = isPctChart || entry.unit === '%';
+        const isOrders = entry.name === 'Orders';
+        const val      = entry.value;
+        const formatted = isPct
+          ? val === null || val === undefined
+            ? '—'
+            : `${val > 0 ? '+' : ''}${Number(val).toFixed(1)}%`
+          : isOrders
+          ? Number(val).toLocaleString()
+          : fmt(val || 0);
+        return (
+          <div key={i} className="flex items-center justify-between gap-4 mb-1">
+            <div className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: entry.color }} />
+              <span className="text-gray-500 dark:text-gray-400">{entry.name}</span>
+            </div>
+            <span className="font-bold text-gray-900 dark:text-white">{formatted}</span>
           </div>
-          <span className="font-bold text-gray-900 dark:text-white">
-            {typeof entry.value === 'number' ? fmt(entry.value) : entry.value}
-          </span>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 };
 
-const axisStyle  = { fontSize: 11, fill: '#9CA3AF' };
-const gridStyle  = { strokeDasharray: '3 3', stroke: '#374151', opacity: 0.25 };
+const PctTooltip = (props) => <ChartTooltip {...props} isPctChart={true} />;
 
+const axisStyle = { fontSize: 11, fill: '#9CA3AF' };
+const gridStyle = { strokeDasharray: '3 3', stroke: '#374151', opacity: 0.25 };
+
+// ── GMV Trend by Country ───────────────────────────────────────
 export function GMVTrendChart({ byCountryMonth, selectedCountries }) {
   const map = {};
   byCountryMonth.forEach(r => {
@@ -45,7 +59,7 @@ export function GMVTrendChart({ byCountryMonth, selectedCountries }) {
         <LineChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
           <CartesianGrid {...gridStyle} />
           <XAxis dataKey="period" tick={axisStyle} tickLine={false} axisLine={false} />
-          <YAxis tickFormatter={fmt} tick={axisStyle} tickLine={false} axisLine={false} width={60} />
+          <YAxis tickFormatter={fmt} tick={axisStyle} tickLine={false} axisLine={false} width={65} />
           <Tooltip content={<ChartTooltip />} />
           <Legend formatter={v => `${COUNTRY_META[v]?.flag || ''} ${v}`} wrapperStyle={{ fontSize: 12 }} />
           {selectedCountries.map(c => (
@@ -59,6 +73,7 @@ export function GMVTrendChart({ byCountryMonth, selectedCountries }) {
   );
 }
 
+// ── Monthly Total GMV ──────────────────────────────────────────
 export function MonthlyTotalChart({ monthlyTotal }) {
   const data = monthlyTotal.map(m => ({ period: m.period, GMV: m.gmv }));
   return (
@@ -69,7 +84,7 @@ export function MonthlyTotalChart({ monthlyTotal }) {
         <BarChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
           <CartesianGrid {...gridStyle} />
           <XAxis dataKey="period" tick={axisStyle} tickLine={false} axisLine={false} />
-          <YAxis tickFormatter={fmt} tick={axisStyle} tickLine={false} axisLine={false} width={60} />
+          <YAxis tickFormatter={fmt} tick={axisStyle} tickLine={false} axisLine={false} width={65} />
           <Tooltip content={<ChartTooltip />} />
           <Bar dataKey="GMV" fill="#FFC244" radius={[4, 4, 0, 0]} />
         </BarChart>
@@ -78,11 +93,11 @@ export function MonthlyTotalChart({ monthlyTotal }) {
   );
 }
 
+// ── Country Share Chart ────────────────────────────────────────
 export function CountryShareChart({ byCountry }) {
-  const total = byCountry.reduce((s, c) => s + c.gmv, 0);
-  const data  = [...byCountry].sort((a, b) => b.gmv - a.gmv).map(c => ({
-    name:  `${COUNTRY_META[c.country]?.flag || ''} ${c.country}`,
-    GMV:   c.gmv,
+  const data = [...byCountry].sort((a, b) => b.gmv - a.gmv).map(c => ({
+    name: `${COUNTRY_META[c.country]?.flag || ''} ${c.country}`,
+    GMV:  c.gmv,
   }));
   return (
     <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm">
@@ -102,19 +117,26 @@ export function CountryShareChart({ byCountry }) {
   );
 }
 
-export function GrowthChart({ growth, selectedCountries }) {
+// ── MoM Growth Chart ───────────────────────────────────────────
+export function GrowthChart({ growth, selectedCountries, filteredPeriods }) {
   if (!growth?.countryMoM) return null;
   const firstCountry = selectedCountries[0];
   if (!growth.countryMoM[firstCountry]) return null;
-  const periods = growth.countryMoM[firstCountry].map(m => m.period);
-  const data = periods.map((period, i) => {
+
+  // Filter to only periods in the current period filter
+  const allPeriods = growth.countryMoM[firstCountry].map(m => m.period);
+  const periods    = filteredPeriods?.length
+    ? allPeriods.filter(p => filteredPeriods.includes(p))
+    : allPeriods;
+
+  const data = periods.map((period) => {
     const point = { period };
     selectedCountries.forEach(c => {
-      const m = growth.countryMoM[c]?.[i];
-      point[c] = m?.momGMV ?? null;
+      const m     = growth.countryMoM[c]?.find(x => x.period === period);
+      point[c]    = m?.momGMV ?? null;
     });
     return point;
-  }).slice(1);
+  }).slice(1); // skip first — no MoM for first period
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm">
@@ -126,7 +148,7 @@ export function GrowthChart({ growth, selectedCountries }) {
           <XAxis dataKey="period" tick={axisStyle} tickLine={false} axisLine={false} />
           <YAxis tickFormatter={v => `${v}%`} tick={axisStyle} tickLine={false} axisLine={false} width={50} />
           <ReferenceLine y={0} stroke="#6B7280" strokeWidth={1} />
-          <Tooltip content={<ChartTooltip />} />
+          <Tooltip content={<PctTooltip />} />
           <Legend formatter={v => `${COUNTRY_META[v]?.flag || ''} ${v}`} wrapperStyle={{ fontSize: 12 }} />
           {selectedCountries.map(c => (
             <Line key={c} type="monotone" dataKey={c} name={c}
