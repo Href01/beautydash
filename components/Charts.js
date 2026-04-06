@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   LineChart, Line, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -111,37 +112,78 @@ export function CountryShareChart({ byCountry }) {
   );
 }
 
-// ── MoM Growth Chart ───────────────────────────────────────────
-export function GrowthChart({ growth, selectedCountries, filteredPeriods }) {
-  if (!growth?.countryMoM) return null;
-  const firstCountry = selectedCountries[0];
-  if (!growth.countryMoM[firstCountry]) return null;
+// ── Evolution Chart (MoM GMV%, Orders%, AOV trend) ────────────
+const METRICS = [
+  { key: 'gmv',    label: 'GMV %',    isPct: true  },
+  { key: 'orders', label: 'Orders %', isPct: true  },
+  { key: 'aov',    label: 'AOV',      isPct: false },
+];
 
-  const allPeriods = growth.countryMoM[firstCountry].map(m => m.period);
-  const periods    = filteredPeriods?.length
-    ? allPeriods.filter(p => filteredPeriods.includes(p))
-    : allPeriods;
+export function EvolutionChart({ byCountryMonth, selectedCountries }) {
+  const [metric, setMetric] = useState('gmv');
+  const isPct = METRICS.find(m => m.key === metric)?.isPct;
 
-  const data = periods.map(period => {
+  const periods = [...new Set(byCountryMonth.map(r => r.period))].sort();
+
+  // Per-country sorted rows for fast lookup
+  const rowsByCountry = {};
+  selectedCountries.forEach(c => {
+    rowsByCountry[c] = byCountryMonth
+      .filter(r => r.country === c)
+      .sort((a, b) => a.period.localeCompare(b.period));
+  });
+
+  const data = periods.map((period, i) => {
     const point = { period };
+    const prevPeriod = periods[i - 1];
     selectedCountries.forEach(c => {
-      const m  = growth.countryMoM[c]?.find(x => x.period === period);
-      point[c] = m?.momGMV ?? null;
+      const cur  = rowsByCountry[c].find(r => r.period === period);
+      const prev = prevPeriod ? rowsByCountry[c].find(r => r.period === prevPeriod) : null;
+      if (metric === 'aov') {
+        point[c] = cur?.aov ?? null;
+      } else {
+        const curVal  = cur?.[metric] ?? null;
+        const prevVal = prev?.[metric] ?? null;
+        point[c] = curVal !== null && prevVal && prevVal > 0
+          ? (curVal - prevVal) / prevVal * 100
+          : null;
+      }
     });
     return point;
-  }).filter(point => selectedCountries.some(c => point[c] !== null));
+  });
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm">
-      <h3 className="font-bold text-gray-900 dark:text-white mb-0.5">MoM Growth % by Country</h3>
-      <p className="text-xs text-gray-400 mb-5">Month-over-month GMV growth</p>
+      <div className="flex items-start justify-between mb-1">
+        <h3 className="font-bold text-gray-900 dark:text-white">Monthly Evolution</h3>
+        <div className="flex gap-1">
+          {METRICS.map(m => (
+            <button key={m.key} onClick={() => setMetric(m.key)}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors ${
+                metric === m.key
+                  ? 'bg-yellow-400 text-black'
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-600'
+              }`}>
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <p className="text-xs text-gray-400 mb-5">
+        {metric === 'aov'
+          ? 'Average order value by country · selected vertical'
+          : `MoM ${metric === 'gmv' ? 'GMV' : 'orders'} growth % · selected vertical`}
+      </p>
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
           <CartesianGrid {...gridStyle} />
           <XAxis dataKey="period" tick={axisStyle} tickLine={false} axisLine={false} />
-          <YAxis tickFormatter={v => `${v}%`} tick={axisStyle} tickLine={false} axisLine={false} width={50} />
-          <ReferenceLine y={0} stroke="#6B7280" strokeWidth={1} />
-          <Tooltip content={<PctTooltip />} />
+          <YAxis
+            tickFormatter={isPct ? v => `${Number(v).toFixed(0)}%` : v => `€${Number(v).toFixed(2)}`}
+            tick={axisStyle} tickLine={false} axisLine={false} width={isPct ? 50 : 65}
+          />
+          {isPct && <ReferenceLine y={0} stroke="#6B7280" strokeWidth={1} />}
+          <Tooltip content={isPct ? <PctTooltip /> : <ChartTooltip />} />
           <Legend formatter={v => `${COUNTRY_META[v]?.flag || ''} ${v}`} wrapperStyle={{ fontSize: 12 }} />
           {selectedCountries.map(c => (
             <Line key={c} type="monotone" dataKey={c} name={c}

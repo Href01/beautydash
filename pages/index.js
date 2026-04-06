@@ -3,7 +3,7 @@ import Head from 'next/head';
 import KPICard from '../components/KPICard';
 import CountryTable from '../components/CountryTable';
 import InsightsPanel from '../components/InsightsPanel';
-import { GMVTrendChart, MonthlyTotalChart, CountryShareChart, GrowthChart, VerticalComparisonChart } from '../components/Charts';
+import { GMVTrendChart, MonthlyTotalChart, CountryShareChart, EvolutionChart, VerticalComparisonChart } from '../components/Charts';
 import { fmt, COUNTRIES, COUNTRY_META } from '../lib/constants';
 
 const PERIOD_FILTERS = [
@@ -386,10 +386,9 @@ export default function Dashboard() {
             <CountryShareChart
               byCountry={filteredByCountry.filter(c => selected.includes(c.country))}
             />
-            <GrowthChart
-              growth={growth}
+            <EvolutionChart
+              byCountryMonth={filteredByCountryMonth}
               selectedCountries={selected}
-              filteredPeriods={filteredPeriods}
             />
           </div>
 
