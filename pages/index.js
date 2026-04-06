@@ -3,24 +3,32 @@ import Head from 'next/head';
 import KPICard from '../components/KPICard';
 import CountryTable from '../components/CountryTable';
 import InsightsPanel from '../components/InsightsPanel';
-import { GMVTrendChart, MonthlyTotalChart, CountryShareChart, GrowthChart } from '../components/Charts';
+import { GMVTrendChart, MonthlyTotalChart, CountryShareChart, GrowthChart, RetailVsMFCChart } from '../components/Charts';
 import { fmt, COUNTRIES, COUNTRY_META } from '../lib/constants';
 
 const PERIOD_FILTERS = [
   { label: 'All time', value: 'all' },
+  { label: '2024',     value: '2024' },
   { label: '2025',     value: '2025' },
   { label: '2026',     value: '2026' },
   { label: 'L3M',      value: 'l3m' },
   { label: 'L6M',      value: 'l6m' },
 ];
 
+const VERTICAL_FILTERS = [
+  { label: 'All',    value: 'all' },
+  { label: 'Retail', value: 'Retail' },
+  { label: 'MFC',    value: 'MFC' },
+];
+
 export default function Dashboard() {
-  const [data, setData]                 = useState(null);
-  const [loading, setLoading]           = useState(true);
-  const [error, setError]               = useState(null);
-  const [dark, setDark]                 = useState(true);
-  const [selected, setSelected]         = useState(COUNTRIES);
-  const [periodFilter, setPeriodFilter] = useState('all');
+  const [data, setData]                   = useState(null);
+  const [loading, setLoading]             = useState(true);
+  const [error, setError]                 = useState(null);
+  const [dark, setDark]                   = useState(true);
+  const [selected, setSelected]           = useState(COUNTRIES);
+  const [periodFilter, setPeriodFilter]   = useState('all');
+  const [verticalFilter, setVerticalFilter] = useState('all');
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark);
@@ -51,13 +59,13 @@ export default function Dashboard() {
 
   const filterByPeriod = (rows) => {
     if (!rows) return [];
-    const now        = new Date();
-    const nowYear    = now.getFullYear();
-    const nowMonth   = now.getMonth(); // 0-indexed
-
+    const now      = new Date();
+    const nowYear  = now.getFullYear();
+    const nowMonth = now.getMonth();
     return rows.filter(r => {
       if (!r.period) return false;
       if (periodFilter === 'all')  return true;
+      if (periodFilter === '2024') return r.period.startsWith('2024');
       if (periodFilter === '2025') return r.period.startsWith('2025');
       if (periodFilter === '2026') return r.period.startsWith('2026');
       if (periodFilter === 'l3m' || periodFilter === 'l6m') {
@@ -68,6 +76,11 @@ export default function Dashboard() {
       }
       return true;
     });
+  };
+
+  const filterByVertical = (rows) => {
+    if (!rows || verticalFilter === 'all') return rows;
+    return rows.filter(r => r.vertical === verticalFilter);
   };
 
   // ── Loading ───────────────────────────────────────────────────
@@ -90,10 +103,7 @@ export default function Dashboard() {
           <div className="text-5xl mb-4">⚠️</div>
           <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Connection Error</h2>
           <p className="text-sm text-red-500 mb-4 font-mono bg-red-50 dark:bg-red-900/20 p-3 rounded-lg">{error}</p>
-          <button
-            onClick={fetchData}
-            className="px-4 py-2 bg-yellow-400 text-black font-bold rounded-lg text-sm"
-          >
+          <button onClick={fetchData} className="px-4 py-2 bg-yellow-400 text-black font-bold rounded-lg text-sm">
             Retry
           </button>
         </div>
@@ -102,44 +112,50 @@ export default function Dashboard() {
   );
 
   // ── Data processing ───────────────────────────────────────────
-  const { summary, byCountry, byCountryMonth, monthlyTotal, growth, meta } = data;
+  const { summary, byCountryMonth, byVertical, byVerticalCountryMonth, monthlyTotal, growth, meta } = data;
 
-  // Exclude current partial month from all calculations
-  const now           = new Date();
-  const currentPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  const cleanMonthlyTotal   = monthlyTotal.filter(m => m.period !== currentPeriod);
-  const cleanByCountryMonth = byCountryMonth.filter(r => r.period !== currentPeriod);
+  const currentPeriod = meta?.currentPeriod || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
 
-  // Apply period filter on clean data
-  const filteredMonthlyTotal   = filterByPeriod(cleanMonthlyTotal);
-  const filteredByCountryMonth = filterByPeriod(cleanByCountryMonth).filter(r => selected.includes(r.country));
-  const filteredPeriods        = filteredMonthlyTotal.map(m => m.period);
+  // Apply all filters
+  const filteredMonthlyTotal = filterByPeriod(
+    filterByVertical(monthlyTotal)
+  );
 
-  // Recalculate byCountry from filtered periods
-  // This ensures % GMV always adds up to 100% and matches the selected period
+  const filteredByCountryMonth = filterByPeriod(
+    filterByVertical(byCountryMonth)
+  ).filter(r => selected.includes(r.country));
+
+  const filteredPeriods = [...new Set(filteredMonthlyTotal.map(m => m.period))].sort();
+
+  // Recalculate byCountry from filtered data
   const filteredByCountry = COUNTRIES.map(country => {
-    const rows   = filterByPeriod(cleanByCountryMonth).filter(r => r.country === country);
+    const rows   = filterByPeriod(filterByVertical(byCountryMonth)).filter(r => r.country === country);
     const gmv    = rows.reduce((s, r) => s + r.gmv, 0);
     const orders = rows.reduce((s, r) => s + r.orders, 0);
-    return {
-      country,
-      gmv,
-      orders,
-      aov: orders > 0 ? gmv / orders : 0,
-    };
+    return { country, gmv, orders, aov: orders > 0 ? gmv / orders : 0 };
   }).filter(c => c.gmv > 0 || c.orders > 0);
 
-  // KPI MoM — based on last two months of filtered data
-  const lastMonth = filteredMonthlyTotal?.[filteredMonthlyTotal.length - 1];
-  const prevMonth = filteredMonthlyTotal?.[filteredMonthlyTotal.length - 2];
-  const lastMoM   = lastMonth && prevMonth && prevMonth.gmv > 0
-    ? ((lastMonth.gmv - prevMonth.gmv) / prevMonth.gmv * 100)
-    : null;
-
-  // Filtered KPI summary — derived from filteredByCountry so everything is consistent
+  // KPI summary from filtered data
   const filteredGMV    = filteredByCountry.reduce((s, c) => s + c.gmv, 0);
   const filteredOrders = filteredByCountry.reduce((s, c) => s + c.orders, 0);
   const filteredAOV    = filteredOrders > 0 ? filteredGMV / filteredOrders : 0;
+
+  // MoM for KPI card
+  const lastMonth = filteredMonthlyTotal?.[filteredMonthlyTotal.length - 1];
+  const prevMonth = filteredMonthlyTotal?.[filteredMonthlyTotal.length - 2];
+  const lastMoM   = lastMonth && prevMonth && prevMonth.gmv > 0
+    ? ((lastMonth.gmv - prevMonth.gmv) / prevMonth.gmv * 100) : null;
+
+  // Vertical comparison data — always show all verticals regardless of filter
+  const filteredByVertical = filterByPeriod(byVertical);
+
+  // Vertical KPI breakdown
+  const retailGMV = filterByPeriod(byVertical)
+    .filter(v => v.vertical === 'Retail')
+    .reduce((s, v) => s + v.gmv, 0);
+  const mfcGMV = filterByPeriod(byVertical)
+    .filter(v => v.vertical === 'MFC')
+    .reduce((s, v) => s + v.gmv, 0);
 
   return (
     <div className={dark ? 'dark' : ''}>
@@ -155,33 +171,21 @@ export default function Dashboard() {
               </div>
               <div>
                 <h1 className="font-black text-gray-900 dark:text-white text-sm">
-                  Beauty Africa · Retail
+                  Beauty Africa · {verticalFilter === 'all' ? 'All Verticals' : verticalFilter}
                 </h1>
                 <p className="text-xs text-gray-400">
-                  {filteredPeriods[0] || meta?.periodStart}
-                  {' → '}
-                  {filteredPeriods[filteredPeriods.length - 1] || meta?.periodEnd}
-                  {' · '}
-                  {meta?.totalRows?.toLocaleString()} rows
-                  {' · '}
-                  <span className="text-orange-400">
-                    ⚠️ {currentPeriod} excluded (partial)
-                  </span>
+                  {filteredPeriods[0] || meta?.periodStart} → {filteredPeriods[filteredPeriods.length - 1] || meta?.periodEnd}
+                  &nbsp;·&nbsp;{meta?.totalRows?.toLocaleString()} rows
+                  &nbsp;·&nbsp;<span className="text-orange-400">⚠️ {currentPeriod} excluded</span>
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <div className="w-2 h-2 rounded-full bg-green-500" title="Live data" />
-              <button
-                onClick={fetchData}
-                className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-              >
+              <div className="w-2 h-2 rounded-full bg-green-500" />
+              <button onClick={fetchData} className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
                 ↻ Refresh
               </button>
-              <button
-                onClick={() => setDark(!dark)}
-                className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-              >
+              <button onClick={() => setDark(!dark)} className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
                 {dark ? '☀️ Light' : '🌙 Dark'}
               </button>
             </div>
@@ -193,7 +197,7 @@ export default function Dashboard() {
           {/* ── KPIs ──────────────────────────────────────────────── */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <KPICard
-              title="Total Retail GMV"
+              title={verticalFilter === 'all' ? 'Total Beauty GMV' : `${verticalFilter} GMV`}
               value={fmt(filteredGMV)}
               subtitle={`${filteredPeriods[0] || meta?.periodStart} → ${filteredPeriods[filteredPeriods.length - 1] || meta?.periodEnd}`}
               trend={lastMoM}
@@ -204,7 +208,7 @@ export default function Dashboard() {
             <KPICard
               title="Total Orders"
               value={filteredOrders.toLocaleString()}
-              subtitle="Delivered retail beauty"
+              subtitle={verticalFilter === 'all' ? 'All verticals' : verticalFilter}
               icon="📦"
               accent="green"
               delay={80}
@@ -212,7 +216,7 @@ export default function Dashboard() {
             <KPICard
               title="Avg Order Value"
               value={`€${filteredAOV.toFixed(2)}`}
-              subtitle="Retail vertical"
+              subtitle={verticalFilter === 'all' ? 'All verticals' : verticalFilter}
               icon="🛒"
               accent="blue"
               delay={160}
@@ -227,22 +231,40 @@ export default function Dashboard() {
             />
           </div>
 
+          {/* ── Vertical summary strip (only when All is selected) ── */}
+          {verticalFilter === 'all' && (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-4 flex items-center justify-between border-l-4 border-yellow-400">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Retail GMV</p>
+                  <p className="text-2xl font-black text-gray-900 dark:text-white">{fmt(retailGMV)}</p>
+                  <p className="text-xs text-gray-400">{filteredGMV > 0 ? (retailGMV / filteredGMV * 100).toFixed(1) : 0}% of total</p>
+                </div>
+                <span className="text-3xl">🏪</span>
+              </div>
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-4 flex items-center justify-between border-l-4 border-green-500">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-gray-400">MFC GMV</p>
+                  <p className="text-2xl font-black text-gray-900 dark:text-white">{fmt(mfcGMV)}</p>
+                  <p className="text-xs text-gray-400">{filteredGMV > 0 ? (mfcGMV / filteredGMV * 100).toFixed(1) : 0}% of total</p>
+                </div>
+                <span className="text-3xl">🏭</span>
+              </div>
+            </div>
+          )}
+
           {/* ── Filters ───────────────────────────────────────────── */}
           <div className="flex flex-wrap gap-6">
 
             {/* Country filter */}
             <div className="flex flex-wrap gap-2 items-center">
-              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-                Markets:
-              </span>
+              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Markets:</span>
               {COUNTRIES.map(c => (
                 <button
                   key={c}
                   onClick={() => toggle(c)}
                   className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
-                    selected.includes(c)
-                      ? 'text-black shadow-sm'
-                      : 'bg-gray-100 dark:bg-gray-800 text-gray-400'
+                    selected.includes(c) ? 'text-black shadow-sm' : 'bg-gray-100 dark:bg-gray-800 text-gray-400'
                   }`}
                   style={selected.includes(c) ? { background: COUNTRY_META[c]?.color } : {}}
                 >
@@ -251,7 +273,7 @@ export default function Dashboard() {
               ))}
               <button
                 onClick={() => setSelected(COUNTRIES)}
-                className="px-3 py-1.5 rounded-full text-xs font-bold bg-gray-100 dark:bg-gray-800 text-gray-400 ml-1 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                className="px-3 py-1.5 rounded-full text-xs font-bold bg-gray-100 dark:bg-gray-800 text-gray-400 ml-1"
               >
                 All
               </button>
@@ -259,9 +281,7 @@ export default function Dashboard() {
 
             {/* Period filter */}
             <div className="flex flex-wrap gap-2 items-center">
-              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-                Period:
-              </span>
+              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Period:</span>
               {PERIOD_FILTERS.map(f => (
                 <button
                   key={f.value}
@@ -269,7 +289,25 @@ export default function Dashboard() {
                   className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
                     periodFilter === f.value
                       ? 'bg-gray-800 dark:bg-white text-white dark:text-gray-900'
-                      : 'bg-gray-100 dark:bg-gray-800 text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+                      : 'bg-gray-100 dark:bg-gray-800 text-gray-400'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Vertical filter */}
+            <div className="flex flex-wrap gap-2 items-center">
+              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Vertical:</span>
+              {VERTICAL_FILTERS.map(f => (
+                <button
+                  key={f.value}
+                  onClick={() => setVerticalFilter(f.value)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
+                    verticalFilter === f.value
+                      ? 'bg-yellow-400 text-black shadow-sm'
+                      : 'bg-gray-100 dark:bg-gray-800 text-gray-400'
                   }`}
                 >
                   {f.label}
@@ -284,9 +322,7 @@ export default function Dashboard() {
               byCountryMonth={filteredByCountryMonth}
               selectedCountries={selected}
             />
-            <MonthlyTotalChart
-              monthlyTotal={filteredMonthlyTotal}
-            />
+            <MonthlyTotalChart monthlyTotal={filteredMonthlyTotal} />
           </div>
 
           {/* ── Charts Row 2 ──────────────────────────────────────── */}
@@ -301,10 +337,17 @@ export default function Dashboard() {
             />
           </div>
 
+          {/* ── Retail vs MFC Chart (always visible, ignores vertical filter) ── */}
+          <RetailVsMFCChart
+            byVertical={filteredByVertical}
+            selectedCountries={selected}
+            byVerticalCountryMonth={filterByPeriod(byVerticalCountryMonth).filter(r => selected.includes(r.country))}
+          />
+
           {/* ── Country Table ──────────────────────────────────────── */}
           <CountryTable
             byCountry={filteredByCountry}
-            byCountryMonth={filterByPeriod(cleanByCountryMonth)}
+            byCountryMonth={filterByPeriod(filterByVertical(byCountryMonth))}
             filteredPeriods={filteredPeriods}
             totalGMV={filteredGMV}
             totalOrders={filteredOrders}
@@ -319,7 +362,7 @@ export default function Dashboard() {
           />
 
           <p className="text-center text-xs text-gray-300 dark:text-gray-700 pb-4">
-            Glovo Q-Commerce Africa · Beauty Retail · Internal use only
+            Glovo Q-Commerce Africa · Beauty · Internal use only
           </p>
         </main>
       </div>

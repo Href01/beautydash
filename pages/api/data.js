@@ -1,44 +1,70 @@
 import { google } from 'googleapis';
 
 const SPREADSHEET_ID = process.env.GOOGLE_SPREADSHEET_ID;
-const TAB_NAME = 'Reta-CTRY';
 
-const COLUMNS = {
-  country: 'cities_country_code',
-  month:   'bought_products_order_started_local_month',
-  year:    'bought_products_order_started_local_year',
-  gmv:     'bought_products_products_value_delivered_eur',
-  orders:  'bought_products_number_of_distinct_delivered_orders',
-};
+// Per-source column mappings
+const SOURCES = [
+  {
+    tab:      'Reta-CTRY',
+    vertical: 'Retail',
+    columns: {
+      country: 'cities_country_code',
+      month:   'bought_products_order_started_local_month',
+      year:    'bought_products_order_started_local_year',
+      gmv:     'bought_products_products_value_delivered_eur',
+      orders:  'bought_products_number_of_distinct_delivered_orders',
+    }
+  },
+  {
+    tab:      'MFC-CTRY',
+    vertical: 'MFC',
+    columns: {
+      country: 'products_sold_v2_country_code',
+      month:   'products_sold_v2_order_activation_local_month',
+      year:    'products_sold_v2_order_activation_local_year',
+      gmv:     'products_sold_v2_total_product_revenue_eur',
+      orders:  'products_sold_v2_total_orders_no_remake_or_split',
+    }
+  },
+  // ADD MORE:
+  // { tab: 'Groc-CTRY', vertical: 'Groceries', columns: {...} },
+];
 
 function r2(v) { return Math.round(v * 100) / 100; }
-
-function parseMonth(raw) {
-  var s = String(raw).trim();
-  if (s.indexOf('-') !== -1) return parseInt(s.split('-')[1]);
-  return parseInt(s);
-}
 
 function getCurrentPeriod() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
-function readRows(values) {
+function parseMonth(raw) {
+  const s = String(raw).trim();
+  if (s.indexOf('-') !== -1) return parseInt(s.split('-')[1]);
+  return parseInt(s);
+}
+
+function parseYear(rawMonth, rawYear) {
+  const s = String(rawMonth).trim();
+  if (s.indexOf('-') !== -1) return parseInt(s.split('-')[0]);
+  return parseInt(rawYear);
+}
+
+function readRows(values, vertical, columns) {
   if (!values || values.length < 2) return [];
   const headers = values[0];
   const colIdx  = {};
-  Object.keys(COLUMNS).forEach(key => {
-    colIdx[key] = headers.indexOf(COLUMNS[key]);
+  Object.keys(columns).forEach(key => {
+    colIdx[key] = headers.indexOf(columns[key]);
   });
   const rows = [];
   for (let i = 1; i < values.length; i++) {
     const row     = values[i];
     const country = colIdx.country >= 0 ? String(row[colIdx.country]).trim() : '';
-    const month   = colIdx.month   >= 0 ? parseMonth(row[colIdx.month])      : 0;
-    const year    = colIdx.year    >= 0 ? parseInt(row[colIdx.year])          : 0;
-    const gmv     = colIdx.gmv     >= 0 ? parseFloat(row[colIdx.gmv])         : 0;
-    const orders  = colIdx.orders  >= 0 ? parseInt(row[colIdx.orders])        : 0;
+    const rawMonth = colIdx.month  >= 0 ? row[colIdx.month] : '';
+    const month    = parseMonth(rawMonth);
+    const year     = parseYear(rawMonth, colIdx.year >= 0 ? row[colIdx.year] : 0);
+    const gmv      = colIdx.gmv    >= 0 ? parseFloat(row[colIdx.gmv])  : 0;
+    const orders   = colIdx.orders >= 0 ? parseInt(row[colIdx.orders]) : 0;
     if (!country || !month || !year || isNaN(gmv) || isNaN(orders)) continue;
     rows.push({
       country,
@@ -47,7 +73,7 @@ function readRows(values) {
       period:   `${year}-${month < 10 ? '0' + month : month}`,
       gmv,
       orders,
-      vertical: 'Retail',
+      vertical,
     });
   }
   return rows;
@@ -103,6 +129,41 @@ function buildByCountryMonth(rows) {
   })).sort((a, b) => a.period.localeCompare(b.period));
 }
 
+function buildByVertical(rows) {
+  const map = {};
+  rows.forEach(r => {
+    const key = `${r.period}_${r.vertical}`;
+    if (!map[key]) map[key] = { period: r.period, vertical: r.vertical, gmv: 0, orders: 0 };
+    map[key].gmv    += r.gmv;
+    map[key].orders += r.orders;
+  });
+  return Object.values(map).map(r => ({
+    period:   r.period,
+    vertical: r.vertical,
+    gmv:      r2(r.gmv),
+    orders:   r.orders,
+    aov:      r.orders > 0 ? r2(r.gmv / r.orders) : 0,
+  })).sort((a, b) => a.period.localeCompare(b.period));
+}
+
+function buildByVerticalCountryMonth(rows) {
+  const map = {};
+  rows.forEach(r => {
+    const key = `${r.period}_${r.country}_${r.vertical}`;
+    if (!map[key]) map[key] = { period: r.period, country: r.country, vertical: r.vertical, gmv: 0, orders: 0 };
+    map[key].gmv    += r.gmv;
+    map[key].orders += r.orders;
+  });
+  return Object.values(map).map(r => ({
+    period:   r.period,
+    country:  r.country,
+    vertical: r.vertical,
+    gmv:      r2(r.gmv),
+    orders:   r.orders,
+    aov:      r.orders > 0 ? r2(r.gmv / r.orders) : 0,
+  })).sort((a, b) => a.period.localeCompare(b.period));
+}
+
 function buildMonthlyTotal(rows) {
   const map = {};
   rows.forEach(r => {
@@ -125,34 +186,29 @@ function buildMonthlyTotal(rows) {
 }
 
 function buildGrowth(rows) {
-  const byCP = {}, periods = [], periodSet = {}, countries = [], countrySet = {};
+  const byCP = {}, periods = [], pSet = {}, countries = [], cSet = {};
   rows.forEach(r => {
     const key = `${r.country}_${r.period}`;
     if (!byCP[key]) byCP[key] = { country: r.country, period: r.period, gmv: 0, orders: 0 };
     byCP[key].gmv    += r.gmv;
     byCP[key].orders += r.orders;
-    if (!periodSet[r.period])   { periodSet[r.period]   = true; periods.push(r.period); }
-    if (!countrySet[r.country]) { countrySet[r.country] = true; countries.push(r.country); }
+    if (!pSet[r.period])   { pSet[r.period]   = true; periods.push(r.period); }
+    if (!cSet[r.country])  { cSet[r.country]  = true; countries.push(r.country); }
   });
   periods.sort();
   const first = periods[0];
   const last  = periods[periods.length - 1];
 
-  // Period comparison — first vs last clean period
   const comparison = countries.map(c => {
     const f = byCP[`${c}_${first}`] || { gmv: 0, orders: 0 };
     const l = byCP[`${c}_${last}`]  || { gmv: 0, orders: 0 };
     return {
-      country:     c,
-      firstPeriod: first,
-      lastPeriod:  last,
-      firstGMV:    r2(f.gmv),
-      lastGMV:     r2(l.gmv),
-      gmvGrowth:   f.gmv > 0 ? r2((l.gmv - f.gmv) / f.gmv * 100) : null,
+      country: c, firstPeriod: first, lastPeriod: last,
+      firstGMV: r2(f.gmv), lastGMV: r2(l.gmv),
+      gmvGrowth: f.gmv > 0 ? r2((l.gmv - f.gmv) / f.gmv * 100) : null,
     };
   });
 
-  // MoM per country
   const countryMoM = {};
   countries.forEach(c => {
     const cp = periods.map(p => byCP[`${c}_${p}`] || { country: c, period: p, gmv: 0, orders: 0 });
@@ -166,21 +222,18 @@ function buildGrowth(rows) {
     });
   });
 
-  // YoY per country — compare same month this year vs last year
   const yoy = {};
   countries.forEach(c => {
     yoy[c] = periods.map(p => {
       const [y, m]     = p.split('-').map(Number);
       const prevYearP  = `${y - 1}-${String(m).padStart(2, '0')}`;
-      const current    = byCP[`${c}_${p}`]         || { gmv: 0, orders: 0 };
-      const prevYear   = byCP[`${c}_${prevYearP}`] || { gmv: 0, orders: 0 };
+      const cur        = byCP[`${c}_${p}`]         || { gmv: 0 };
+      const prev       = byCP[`${c}_${prevYearP}`] || { gmv: 0 };
       return {
         period:      p,
-        gmv:         r2(current.gmv),
-        prevYearGMV: r2(prevYear.gmv),
-        yoyGMV:      prevYear.gmv > 0
-          ? r2((current.gmv - prevYear.gmv) / prevYear.gmv * 100)
-          : null,
+        gmv:         r2(cur.gmv),
+        prevYearGMV: r2(prev.gmv),
+        yoyGMV:      prev.gmv > 0 ? r2((cur.gmv - prev.gmv) / prev.gmv * 100) : null,
       };
     });
   });
@@ -198,23 +251,31 @@ export default async function handler(req, res) {
       scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
     });
 
-    const sheets   = google.sheets({ version: 'v4', auth });
-    const response = await sheets.spreadsheets.values.get({
+    const sheets = google.sheets({ version: 'v4', auth });
+
+    // Read all tabs in parallel
+    const ranges   = SOURCES.map(s => `${s.tab}!A:E`);
+    const response = await sheets.spreadsheets.values.batchGet({
       spreadsheetId: SPREADSHEET_ID,
-      range:         `${TAB_NAME}!A:E`,
+      ranges,
     });
 
-    const allRows = readRows(response.data.values);
+    // Parse all rows from all sources
+    let allRows = [];
+    (response.data.valueRanges || []).forEach((valueRange, i) => {
+      const source = SOURCES[i];
+      const rows   = readRows(valueRange.values, source.vertical, source.columns);
+      allRows      = allRows.concat(rows);
+    });
 
     if (allRows.length === 0) {
-      return res.status(200).json({ error: 'No data found in sheet' });
+      return res.status(200).json({ error: 'No data found in any sheet' });
     }
 
-    // Exclude current partial month from ALL calculations
+    // Exclude current partial month
     const currentPeriod = getCurrentPeriod();
     const rows          = allRows.filter(r => r.period !== currentPeriod);
-
-    const periods = [...new Set(rows.map(r => r.period))].sort();
+    const periods       = [...new Set(rows.map(r => r.period))].sort();
 
     const result = {
       meta: {
@@ -222,15 +283,16 @@ export default async function handler(req, res) {
         totalRows:      rows.length,
         periodStart:    periods[0],
         periodEnd:      periods[periods.length - 1],
-        currentPeriod:  currentPeriod,
-        verticals:      ['Retail'],
+        currentPeriod,
+        verticals:      SOURCES.map(s => s.vertical),
       },
-      summary:        buildSummary(rows),
-      byCountry:      buildByCountry(rows),
-      byCountryMonth: buildByCountryMonth(rows),
-      monthlyTotal:   buildMonthlyTotal(rows),
-      growth:         buildGrowth(rows),
-      byVertical:     [],
+      summary:                buildSummary(rows),
+      byCountry:              buildByCountry(rows),
+      byCountryMonth:         buildByCountryMonth(rows),
+      byVertical:             buildByVertical(rows),
+      byVerticalCountryMonth: buildByVerticalCountryMonth(rows),
+      monthlyTotal:           buildMonthlyTotal(rows),
+      growth:                 buildGrowth(rows),
     };
 
     res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate');
