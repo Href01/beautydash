@@ -104,7 +104,6 @@ export default function CountryTable({ byCountry, byCountryMonth, allByCountryMo
               {hasPenetration && (
                 <th className="px-5 py-3 text-right">
                   Penetration
-                  <span className="ml-1 text-gray-300 normal-case font-normal">(vs 10% target)</span>
                 </th>
               )}
               <th className="px-5 py-3 text-left">Status & Insight</th>
@@ -166,19 +165,10 @@ export default function CountryTable({ byCountry, byCountryMonth, allByCountryMo
                   </td>
                   {hasPenetration && (() => {
                     const pct = getPenetration(row.country);
-                    const color = pct === null ? '' : pct >= 10 ? 'text-emerald-500' : pct >= 5 ? 'text-yellow-500' : 'text-red-400';
                     return (
                       <td className="px-5 py-4 text-right">
                         {pct !== null ? (
-                          <div className="flex flex-col items-end gap-1">
-                            <span className={`text-sm font-bold ${color}`}>{pct.toFixed(2)}%</span>
-                            <div className="w-16 bg-gray-100 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
-                              <div
-                                className="h-full rounded-full"
-                                style={{ width: `${Math.min(pct / 10 * 100, 100)}%`, background: pct >= 10 ? '#10b981' : pct >= 5 ? '#f59e0b' : '#f87171' }}
-                              />
-                            </div>
-                          </div>
+                          <span className="text-sm font-bold text-gray-700 dark:text-gray-200">{pct.toFixed(2)}%</span>
                         ) : <span className="text-gray-300">—</span>}
                       </td>
                     );

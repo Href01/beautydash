@@ -197,7 +197,6 @@ export function EvolutionChart({ byCountryMonth, selectedCountries, filterLabel 
 }
 
 // ── Penetration Trend Chart ────────────────────────────────────
-const PENETRATION_TARGET = 10; // 10% strategy benchmark
 
 export function PenetrationTrendChart({ beautyByCountryMonth, qcomByCountryMonth, globalQcomByMonth, selectedCountries, filterLabel }) {
   // Africa penetration per country: beauty GMV / Africa Qcom GMV
@@ -245,9 +244,6 @@ export function PenetrationTrendChart({ beautyByCountryMonth, qcomByCountryMonth
     <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm">
       <div className="flex items-start justify-between mb-1">
         <h3 className="font-bold text-gray-900 dark:text-white">Beauty Penetration</h3>
-        <span className="text-xs font-bold text-red-400 bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded-lg">
-          Target: {PENETRATION_TARGET}%
-        </span>
       </div>
       <p className="text-xs text-gray-400 mb-5">
         {filterLabel || 'Beauty GMV as % of total Q-Commerce · by country'}
@@ -264,8 +260,6 @@ export function PenetrationTrendChart({ beautyByCountryMonth, qcomByCountryMonth
             tick={axisStyle} tickLine={false} axisLine={false} width={50}
             domain={[0, 'auto']}
           />
-          <ReferenceLine y={PENETRATION_TARGET} stroke="#ef4444" strokeDasharray="4 4"
-            label={{ value: '10% target', position: 'insideTopRight', fontSize: 10, fill: '#ef4444' }} />
           <Tooltip
             formatter={(v, name) => {
               if (name === '_global') return [`${v?.toFixed(3)}%`, 'Global share'];

@@ -421,9 +421,9 @@ export default function Dashboard() {
               <KPICard
                 title="Africa Penetration"
                 value={`${penetrationPct.toFixed(2)}%`}
-                subtitle={`vs Africa Qcom · target 10% · ${penetrationMoMBps !== null ? `${penetrationMoMBps > 0 ? '+' : ''}${penetrationMoMBps} bps MoM` : ''}`}
+                subtitle={`% of Africa Qcom GMV${penetrationMoMBps !== null ? ` · ${penetrationMoMBps > 0 ? '+' : ''}${penetrationMoMBps} bps MoM` : ''}`}
                 icon="🎯"
-                accent={penetrationPct >= 10 ? 'green' : penetrationPct >= 5 ? 'yellow' : 'gray'}
+                accent="blue"
                 delay={320}
               />
             )}

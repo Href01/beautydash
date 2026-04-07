@@ -5,7 +5,6 @@ import {
 } from 'recharts';
 import { fmt, fmtPct, trendColor, COUNTRY_META } from '../lib/constants';
 
-const CVR_BENCHMARK = 10;
 const MAX_SELECT    = 5;
 const STORE_COLORS  = ['#FFC244', '#00A082', '#3B82F6', '#F97316', '#EC4899'];
 
@@ -155,11 +154,6 @@ export default function PartnersTable({ byPartnerMonth, cvrByPartnerMonth }) {
               Click up to {MAX_SELECT} rows to compare trends
             </span>
           )}
-          {hasCVR && (
-            <span className="text-xs text-gray-400">
-              CVR benchmark: <span className="font-bold text-gray-600 dark:text-gray-300">{CVR_BENCHMARK}%</span>
-            </span>
-          )}
           <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
             {partners.length} partners
           </span>
@@ -193,8 +187,7 @@ export default function PartnersTable({ byPartnerMonth, cvrByPartnerMonth }) {
               const color    = isSelected ? colorOf(key) : null;
               const meta     = COUNTRY_META[p.country] || {};
               const gmvPct   = totalGMV > 0 ? p.gmv / totalGMV * 100 : 0;
-              const cvrGood  = p.cvr !== null && p.cvr >= CVR_BENCHMARK;
-              const cvrColor = p.cvr === null ? '' : cvrGood ? 'text-green-500' : 'text-red-400';
+              const cvrColor = 'text-gray-700 dark:text-gray-200';
               const canSelect = !isSelected && selected.size >= MAX_SELECT;
 
               return (
@@ -329,8 +322,6 @@ export default function PartnersTable({ byPartnerMonth, cvrByPartnerMonth }) {
                 contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
               />
               {metric === 'cvr' && (
-                <ReferenceLine y={CVR_BENCHMARK} stroke="#ef4444" strokeDasharray="4 4"
-                  label={{ value: '10% target', position: 'insideTopRight', fontSize: 10, fill: '#ef4444' }} />
               )}
               {selectedList.map(key => (
                 <Line
