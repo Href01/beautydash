@@ -67,7 +67,10 @@ export default function PartnersTable({ byPartnerMonth, cvrByPartnerMonth }) {
     const cvr   = cvrd && cvrd.sessions > 0
       ? cvrd.orders_created / cvrd.sessions * 100
       : null;
-    const sessions = cvrd ? cvrd.sessions : null;
+    const cvrPeriodCount = cvrd ? Object.keys(cvrd.byPeriod).length : 0;
+    const sessions = cvrd && cvrPeriodCount > 0
+      ? Math.round(cvrd.sessions / cvrPeriodCount)
+      : null;
 
     let momCVR = null;
     if (cvrd) {
@@ -137,7 +140,7 @@ export default function PartnersTable({ byPartnerMonth, cvrByPartnerMonth }) {
       <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
         <div>
           <h2 className="font-bold text-gray-900 dark:text-white">Top Partners</h2>
-          <p className="text-xs text-gray-400 mt-0.5">Retail · selected countries & period · ranked by GMV</p>
+          <p className="text-xs text-gray-400 mt-0.5">Retail · selected countries & period · ranked by GMV · Sessions & CVR averaged per month</p>
         </div>
         <div className="flex items-center gap-3">
           {selected.size > 0 && (
@@ -173,7 +176,7 @@ export default function PartnersTable({ byPartnerMonth, cvrByPartnerMonth }) {
               <th className="px-4 py-3 text-right">Orders</th>
               <th className="px-4 py-3 text-right">AOV</th>
               <th className="px-4 py-3 text-right">GMV MoM</th>
-              {hasCVR && <th className="px-4 py-3 text-right">Sessions</th>}
+              {hasCVR && <th className="px-4 py-3 text-right">Avg Sessions/mo</th>}
               {hasCVR && <th className="px-4 py-3 text-right">CVR</th>}
               {hasCVR && <th className="px-4 py-3 text-right">CVR Δ bps</th>}
             </tr>
