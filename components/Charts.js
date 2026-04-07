@@ -199,7 +199,7 @@ export function EvolutionChart({ byCountryMonth, selectedCountries }) {
 // ── Vertical Comparison Chart ──────────────────────────────────
 const VERTICAL_COLORS = { Retail: '#FFC244', MFC: '#00A082', Groceries: '#3B82F6' };
 
-export function VerticalComparisonChart({ byVerticalCountryMonth, selectedCountries }) {
+export function VerticalComparisonChart({ byVerticalCountryMonth, selectedCountries, verticalFilter = 'all' }) {
   // byVerticalCountryMonth is already filtered by period + country in the parent
   // Discover verticals present in data (no hardcoding)
   const verticals = [...new Set(byVerticalCountryMonth.map(r => r.vertical))].sort();
@@ -246,14 +246,17 @@ export function VerticalComparisonChart({ byVerticalCountryMonth, selectedCountr
       <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex items-start justify-between gap-4">
         <div>
           <h3 className="font-bold text-gray-900 dark:text-white mb-0.5">Vertical Comparison</h3>
-          <p className="text-xs text-gray-400">All verticals · ignores vertical filter</p>
+          <p className="text-xs text-gray-400">
+            {verticalFilter === 'all' ? 'All verticals · select a vertical to highlight' : `Highlighting ${verticalFilter} · others dimmed for context`}
+          </p>
         </div>
         <div className="flex gap-6 flex-shrink-0">
           {verticals.map(v => {
-            const color = VERTICAL_COLORS[v] || '#9CA3AF';
-            const pct   = grandTotal > 0 ? (totalByVertical[v] / grandTotal * 100).toFixed(1) : '0.0';
+            const color    = VERTICAL_COLORS[v] || '#9CA3AF';
+            const pct      = grandTotal > 0 ? (totalByVertical[v] / grandTotal * 100).toFixed(1) : '0.0';
+            const isActive = verticalFilter === 'all' || verticalFilter === v;
             return (
-              <div key={v} className="text-right">
+              <div key={v} className="text-right transition-opacity" style={{ opacity: isActive ? 1 : 0.35 }}>
                 <p className="text-xs font-bold mb-0.5" style={{ color }}>{v}</p>
                 <p className="text-sm font-bold text-gray-900 dark:text-white">{fmt(totalByVertical[v] || 0)}</p>
                 <p className="text-xs text-gray-400">{pct}% of GMV</p>
@@ -275,11 +278,16 @@ export function VerticalComparisonChart({ byVerticalCountryMonth, selectedCountr
               <YAxis tickFormatter={fmt} tick={axisStyle} tickLine={false} axisLine={false} width={65} />
               <Tooltip content={<ChartTooltip />} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              {verticals.map(v => (
-                <Line key={v} type="monotone" dataKey={v}
-                  stroke={VERTICAL_COLORS[v] || '#9CA3AF'} strokeWidth={2.5}
-                  dot={false} activeDot={{ r: 4 }} connectNulls />
-              ))}
+              {verticals.map(v => {
+                const isActive = verticalFilter === 'all' || verticalFilter === v;
+                return (
+                  <Line key={v} type="monotone" dataKey={v}
+                    stroke={VERTICAL_COLORS[v] || '#9CA3AF'}
+                    strokeWidth={isActive ? 2.5 : 1.5}
+                    strokeOpacity={isActive ? 1 : 0.25}
+                    dot={false} activeDot={{ r: 4 }} connectNulls />
+                );
+              })}
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -296,10 +304,14 @@ export function VerticalComparisonChart({ byVerticalCountryMonth, selectedCountr
               <YAxis type="category" dataKey="name" tick={{ ...axisStyle, fontSize: 13 }} tickLine={false} axisLine={false} width={55} />
               <Tooltip content={<ChartTooltip />} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              {verticals.map((v, i) => (
-                <Bar key={v} dataKey={v} fill={VERTICAL_COLORS[v] || '#9CA3AF'} stackId="a"
-                  radius={i === verticals.length - 1 ? [0, 4, 4, 0] : [0, 0, 0, 0]} />
-              ))}
+              {verticals.map((v, i) => {
+                const isActive = verticalFilter === 'all' || verticalFilter === v;
+                return (
+                  <Bar key={v} dataKey={v} fill={VERTICAL_COLORS[v] || '#9CA3AF'} stackId="a"
+                    fillOpacity={isActive ? 1 : 0.25}
+                    radius={i === verticals.length - 1 ? [0, 4, 4, 0] : [0, 0, 0, 0]} />
+                );
+              })}
             </BarChart>
           </ResponsiveContainer>
         </div>
