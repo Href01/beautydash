@@ -1,7 +1,36 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
+import {
+  LineChart, Line, BarChart, Bar,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine,
+  ResponsiveContainer,
+} from 'recharts';
 import { fmt, fmtPct, trendColor, COUNTRIES, COUNTRY_META } from '../lib/constants';
+
+const CAT_COLORS = ['#FFC244','#00A082','#3B82F6','#8B5CF6','#EC4899','#F97316','#10B981','#EF4444','#06B6D4','#F59E0B','#84CC16','#A78BFA'];
+const axisStyle  = { fontSize: 11, fill: '#9CA3AF' };
+const gridStyle  = { strokeDasharray: '3 3', stroke: '#374151', opacity: 0.25 };
+
+function ChartTooltip({ active, payload, label, isPct }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-3 shadow-xl text-xs min-w-[160px]">
+      <p className="font-bold text-gray-700 dark:text-gray-200 mb-2">{label}</p>
+      {payload.map((entry, i) => (
+        <div key={i} className="flex items-center justify-between gap-4 mb-1">
+          <div className="flex items-center gap-1.5">
+            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: entry.color }} />
+            <span className="text-gray-500 dark:text-gray-400 max-w-[120px] truncate">{entry.name}</span>
+          </div>
+          <span className="font-bold text-gray-900 dark:text-white">
+            {entry.value == null ? '—' : isPct ? `${Number(entry.value) > 0 ? '+' : ''}${Number(entry.value).toFixed(1)}%` : fmt(entry.value)}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 const PERIOD_FILTERS = [
   { label: 'All time', value: 'all' },
@@ -95,6 +124,8 @@ export default function MFCPage() {
   const [selected, setSelected]     = useState(COUNTRIES);
   const [periodFilter, setPeriod]   = useState('all');
   const [selectedL2, setSelectedL2] = useState(null);
+  const [chartLevel, setChartLevel] = useState('l2');   // 'l2' | 'l3'
+  const [activeCats, setActiveCats] = useState([]);      // selected category keys
 
   useEffect(() => { document.documentElement.classList.toggle('dark', dark); }, [dark]);
 
@@ -181,6 +212,51 @@ export default function MFCPage() {
   });
   const countryRows = Object.values(countryMap).sort((a, b) => b.total - a.total);
   const allL2s = [...new Set(filtCL2.map(r => r.l2))].sort();
+
+  // ── Chart data ───────────────────────────────────────────────
+  // For charts, L3 is independent of table drill-down (uses all L3)
+  const chartL3Monthly = toL3Monthly(filtCL3);
+
+  const chartSource = chartLevel === 'l2' ? l2MonthlyFiltered : chartL3Monthly;
+  const getCatKey   = r => chartLevel === 'l2' ? r.l2 : `${r.l2} · ${r.l3}`;
+
+  // All available categories ranked by GMV
+  const catGMVMap = {};
+  chartSource.forEach(r => {
+    const k = getCatKey(r);
+    catGMVMap[k] = (catGMVMap[k] || 0) + r.gmv;
+  });
+  const allCats    = Object.entries(catGMVMap).sort((a, b) => b[1] - a[1]).map(([k]) => k);
+  const top5       = allCats.slice(0, 5);
+  const shownCats  = activeCats.length > 0 ? activeCats.filter(c => allCats.includes(c)) : top5;
+
+  // Monthly GMV per period per category
+  const chartPeriods = [...new Set(chartSource.map(r => r.period))].sort();
+  const gmvChartData = chartPeriods.map(period => {
+    const point = { period };
+    shownCats.forEach(cat => {
+      const row = chartSource.find(r => getCatKey(r) === cat && r.period === period);
+      point[cat] = row?.gmv ?? null;
+    });
+    return point;
+  });
+
+  // MoM % per period per category
+  const momChartData = chartPeriods.map((period, i) => {
+    const point = { period };
+    if (i === 0) return point;
+    const prevPeriod = chartPeriods[i - 1];
+    shownCats.forEach(cat => {
+      const cur  = chartSource.find(r => getCatKey(r) === cat && r.period === period);
+      const prev = chartSource.find(r => getCatKey(r) === cat && r.period === prevPeriod);
+      point[cat] = cur && prev && prev.gmv > 0 ? (cur.gmv - prev.gmv) / prev.gmv * 100 : null;
+    });
+    return point;
+  });
+
+  const toggleCat = (cat) => setActiveCats(prev =>
+    prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
+  );
 
   // ── Filter summary labels ─────────────────────────────────────
   const periodLabel = PERIOD_FILTERS.find(f => f.value === periodFilter)?.label || 'All time';
@@ -275,6 +351,113 @@ export default function MFCPage() {
                   · MoM compares <span className="font-bold text-gray-600 dark:text-gray-300">{lastTwoPeriods[0]}</span> vs <span className="font-bold text-gray-600 dark:text-gray-300">{lastTwoPeriods[1]}</span>
                 </span>
               )}
+            </div>
+          </div>
+
+          {/* ── Charts ──────────────────────────────────────────────── */}
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
+            {/* Chart controls */}
+            <div className="p-6 border-b border-gray-100 dark:border-gray-700">
+              <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div>
+                  <h2 className="font-bold text-gray-900 dark:text-white">Monthly GMV & MoM Evolution</h2>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    Left: absolute GMV per month · Right: month-over-month % change · both respect country & period filters
+                  </p>
+                </div>
+                {/* Level toggle */}
+                <div className="flex gap-1 flex-shrink-0">
+                  {['l2', 'l3'].map(lvl => (
+                    <button key={lvl} onClick={() => { setChartLevel(lvl); setActiveCats([]); }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                        chartLevel === lvl
+                          ? 'bg-green-500 text-white'
+                          : 'bg-gray-100 dark:bg-gray-700 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-600'
+                      }`}>
+                      {lvl.toUpperCase()} view
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Category selector */}
+              <div className="mt-4">
+                <p className="text-xs text-gray-400 mb-2">
+                  Select categories to display — default: top 5 by GMV · {shownCats.length} shown
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {allCats.map((cat, i) => {
+                    const color   = CAT_COLORS[i % CAT_COLORS.length];
+                    const isShown = shownCats.includes(cat);
+                    const isDefault = activeCats.length === 0 && top5.includes(cat);
+                    return (
+                      <button key={cat} onClick={() => toggleCat(cat)}
+                        className={`px-2.5 py-1 rounded-full text-xs font-bold border transition-all ${
+                          isShown
+                            ? 'text-white border-transparent'
+                            : 'bg-transparent text-gray-400 border-gray-200 dark:border-gray-600 hover:border-gray-400'
+                        }`}
+                        style={isShown ? { background: color, borderColor: color } : {}}>
+                        {cat}
+                        {isDefault && activeCats.length === 0 && <span className="ml-1 opacity-60">★</span>}
+                      </button>
+                    );
+                  })}
+                  {activeCats.length > 0 && (
+                    <button onClick={() => setActiveCats([])}
+                      className="px-2.5 py-1 rounded-full text-xs font-bold text-gray-400 border border-dashed border-gray-300 dark:border-gray-600 hover:border-gray-400">
+                      reset to top 5
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Two charts side by side */}
+            <div className="grid grid-cols-1 xl:grid-cols-2 divide-y xl:divide-y-0 xl:divide-x divide-gray-100 dark:divide-gray-700">
+
+              {/* GMV value trend */}
+              <div className="p-6">
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">
+                  Monthly GMV — absolute value per {chartLevel.toUpperCase()} category
+                </p>
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={gmvChartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                    <CartesianGrid {...gridStyle} />
+                    <XAxis dataKey="period" tick={axisStyle} tickLine={false} axisLine={false} />
+                    <YAxis tickFormatter={fmt} tick={axisStyle} tickLine={false} axisLine={false} width={65} />
+                    <Tooltip content={<ChartTooltip />} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    {shownCats.map((cat, i) => (
+                      <Line key={cat} type="monotone" dataKey={cat}
+                        stroke={CAT_COLORS[allCats.indexOf(cat) % CAT_COLORS.length]}
+                        strokeWidth={2} dot={false} activeDot={{ r: 4 }} connectNulls />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* MoM % evolution */}
+              <div className="p-6">
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">
+                  MoM % evolution — month-over-month GMV growth per {chartLevel.toUpperCase()}
+                </p>
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={momChartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                    <CartesianGrid {...gridStyle} />
+                    <XAxis dataKey="period" tick={axisStyle} tickLine={false} axisLine={false} />
+                    <YAxis tickFormatter={v => `${Number(v).toFixed(0)}%`} tick={axisStyle} tickLine={false} axisLine={false} width={50} />
+                    <ReferenceLine y={0} stroke="#6B7280" strokeWidth={1} />
+                    <Tooltip content={<ChartTooltip isPct />} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    {shownCats.map((cat, i) => (
+                      <Line key={cat} type="monotone" dataKey={cat}
+                        stroke={CAT_COLORS[allCats.indexOf(cat) % CAT_COLORS.length]}
+                        strokeWidth={2} dot={false} activeDot={{ r: 4 }} connectNulls />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           </div>
 
