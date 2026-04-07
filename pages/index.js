@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
+import Link from 'next/link';
 import KPICard from '../components/KPICard';
 import CountryTable from '../components/CountryTable';
 import PartnersTable from '../components/PartnersTable';
@@ -220,6 +221,9 @@ export default function Dashboard() {
             </div>
             <div className="flex items-center gap-3">
               <div className="w-2 h-2 rounded-full bg-green-500" />
+              <Link href="/mfc" className="text-xs px-3 py-1.5 rounded-lg bg-green-500/10 text-green-600 dark:text-green-400 font-bold hover:bg-green-500/20 transition-colors">
+                MFC Deep Dive →
+              </Link>
               <button
                 onClick={fetchData}
                 className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
