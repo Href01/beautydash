@@ -31,7 +31,6 @@ export default function Dashboard() {
   const [selected, setSelected]             = useState(COUNTRIES);
   const [periodFilter, setPeriodFilter]     = useState('all');
   const [verticalFilter, setVerticalFilter] = useState('all');
-  const [partnerData, setPartnerData]       = useState(null);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark);
@@ -39,13 +38,11 @@ export default function Dashboard() {
 
   const fetchData = () => {
     setLoading(true);
-    Promise.all([
-      fetch('/api/data').then(r => r.json()),
-      fetch('/api/partners').then(r => r.json()),
-    ]).then(([d, p]) => {
+    fetch('/api/data')
+      .then(r => r.json())
+      .then(d => {
         if (d.error) throw new Error(d.error);
         setData(d);
-        setPartnerData(p);
         setLoading(false);
       })
       .catch(e => {
@@ -97,6 +94,7 @@ export default function Dashboard() {
     byVerticalCountryMonth,
     monthlyTotal,
     growth,
+    partners,
     meta,
   } = data;
 
@@ -160,7 +158,7 @@ export default function Dashboard() {
   const filteredByCountryMonth = filterByPeriod(getCountryMonthSource())
     .filter(r => selected.includes(r.country));
   const filteredPeriods        = [...new Set(filteredMonthlyTotal.map(m => m.period))].sort();
-  const filteredPartnerMonth   = filterByPeriod(partnerData?.byPartnerMonth || [])
+  const filteredPartnerMonth   = filterByPeriod(partners?.byPartnerMonth || [])
     .filter(r => selected.includes(r.country));
 
   // ── Recalculate byCountry from filtered source ────────────────
