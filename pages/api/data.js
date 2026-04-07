@@ -53,6 +53,18 @@ const SOURCES = [
     }
   },
   {
+    tab:      'Qcomfull',
+    vertical: 'Qcom',
+    range:    'A:E',
+    columns: {
+      country: 'cities_country_code',
+      month:   'bought_products_order_started_local_month',
+      year:    'bought_products_order_started_local_year',
+      gmv:     'bought_products_products_value_delivered_eur',
+      orders:  'bought_products_number_of_distinct_delivered_orders',
+    }
+  },
+  {
     tab:      'Part_CVR',
     vertical: 'PartnerCVR',
     range:    'A:G',
@@ -368,16 +380,17 @@ export default async function handler(req, res) {
     });
 
     const currentPeriod = getCurrentPeriod();
-    let allRows = [], partnerRows = [], cvrRows = [];
+    let allRows = [], partnerRows = [], cvrRows = [], qcomRows = [];
 
     (response.data.valueRanges || []).forEach((vr, i) => {
       const source = SOURCES[i];
       const rows   = readRows(vr.values, source.vertical, source.columns)
         .filter(r => r.period !== currentPeriod);
 
-      if (source.vertical === 'Partners')    partnerRows = partnerRows.concat(rows);
-      else if (source.vertical === 'PartnerCVR') cvrRows = cvrRows.concat(rows);
-      else                                   allRows     = allRows.concat(rows);
+      if (source.vertical === 'Partners')        partnerRows = partnerRows.concat(rows);
+      else if (source.vertical === 'PartnerCVR') cvrRows     = cvrRows.concat(rows);
+      else if (source.vertical === 'Qcom')       qcomRows    = qcomRows.concat(rows);
+      else                                       allRows     = allRows.concat(rows);
     });
 
     if (allRows.length === 0) {
@@ -406,6 +419,9 @@ export default async function handler(req, res) {
       partners: {
         ...buildPartners(partnerRows),
         cvrByPartnerMonth: buildPartnerCVR(cvrRows),
+      },
+      qcom: {
+        byCountryMonth: buildByCountryMonth(qcomRows),
       },
     };
 

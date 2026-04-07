@@ -196,6 +196,78 @@ export function EvolutionChart({ byCountryMonth, selectedCountries, filterLabel 
   );
 }
 
+// ── Penetration Trend Chart ────────────────────────────────────
+const PENETRATION_TARGET = 10; // 10% strategy benchmark
+
+export function PenetrationTrendChart({ beautyByCountryMonth, qcomByCountryMonth, selectedCountries, filterLabel }) {
+  // Build penetration % per country per period
+  // penetration = beauty GMV / qcom GMV * 100
+  const qcomMap = {};
+  qcomByCountryMonth.forEach(r => {
+    if (!qcomMap[r.period]) qcomMap[r.period] = {};
+    qcomMap[r.period][r.country] = (qcomMap[r.period][r.country] || 0) + r.gmv;
+  });
+
+  const beautyMap = {};
+  beautyByCountryMonth.forEach(r => {
+    if (!beautyMap[r.period]) beautyMap[r.period] = {};
+    beautyMap[r.period][r.country] = (beautyMap[r.period][r.country] || 0) + r.gmv;
+  });
+
+  const periods = [...new Set([
+    ...Object.keys(qcomMap),
+    ...Object.keys(beautyMap),
+  ])].sort();
+
+  const data = periods.map(period => {
+    const point = { period };
+    selectedCountries.forEach(c => {
+      const beauty = beautyMap[period]?.[c] || 0;
+      const qcom   = qcomMap[period]?.[c]   || 0;
+      point[c] = qcom > 0 ? parseFloat((beauty / qcom * 100).toFixed(2)) : null;
+    });
+    return point;
+  }).filter(p => selectedCountries.some(c => p[c] !== null));
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm">
+      <div className="flex items-start justify-between mb-1">
+        <h3 className="font-bold text-gray-900 dark:text-white">Beauty Penetration</h3>
+        <span className="text-xs font-bold text-red-400 bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded-lg">
+          Target: {PENETRATION_TARGET}%
+        </span>
+      </div>
+      <p className="text-xs text-gray-400 mb-5">
+        {filterLabel || 'Beauty GMV as % of total Q-Commerce · by country'}
+      </p>
+      <ResponsiveContainer width="100%" height={280}>
+        <LineChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+          <CartesianGrid {...gridStyle} />
+          <XAxis dataKey="period" tick={axisStyle} tickLine={false} axisLine={false} />
+          <YAxis
+            tickFormatter={v => `${v}%`}
+            tick={axisStyle} tickLine={false} axisLine={false} width={50}
+            domain={[0, 'auto']}
+          />
+          <ReferenceLine y={PENETRATION_TARGET} stroke="#ef4444" strokeDasharray="4 4"
+            label={{ value: '10% target', position: 'insideTopRight', fontSize: 10, fill: '#ef4444' }} />
+          <Tooltip
+            formatter={(v, name) => [`${v?.toFixed(2)}%`, `${COUNTRY_META[name]?.flag || ''} ${name}`]}
+            labelStyle={{ fontWeight: 'bold', fontSize: 12 }}
+            contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
+          />
+          <Legend formatter={v => `${COUNTRY_META[v]?.flag || ''} ${v}`} wrapperStyle={{ fontSize: 12 }} />
+          {selectedCountries.map(c => (
+            <Line key={c} type="monotone" dataKey={c} name={c}
+              stroke={COUNTRY_META[c]?.color} strokeWidth={2}
+              dot={false} activeDot={{ r: 4 }} connectNulls />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 // ── Vertical Comparison Chart ──────────────────────────────────
 
 export function VerticalComparisonChart({ byVerticalCountryMonth, selectedCountries, verticalFilter = 'all' }) {

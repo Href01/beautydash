@@ -5,7 +5,7 @@ import KPICard from '../components/KPICard';
 import CountryTable from '../components/CountryTable';
 import PartnersTable from '../components/PartnersTable';
 import InsightsPanel from '../components/InsightsPanel';
-import { GMVTrendChart, MonthlyTotalChart, EvolutionChart, VerticalComparisonChart } from '../components/Charts';
+import { GMVTrendChart, MonthlyTotalChart, EvolutionChart, VerticalComparisonChart, PenetrationTrendChart } from '../components/Charts';
 import { fmt, fmtPct, trendColor, COUNTRIES, COUNTRY_META, VERTICAL_COLORS } from '../lib/constants';
 
 const PERIOD_FILTERS = [
@@ -96,6 +96,7 @@ export default function Dashboard() {
     monthlyTotal,
     growth,
     partners,
+    qcom,
     meta,
   } = data;
 
@@ -198,6 +199,20 @@ export default function Dashboard() {
   const retailGMV    = verticalGMV['Retail']    || 0;
   const mfcGMV       = verticalGMV['MFC']       || 0;
   const groceriesGMV = verticalGMV['Groceries'] || 0;
+
+  // ── Qcom penetration ──────────────────────────────────────────
+  const filteredQcomByCountryMonth = filterByPeriod(qcom?.byCountryMonth || [])
+    .filter(r => selected.includes(r.country));
+  const filteredQcomGMV = filteredQcomByCountryMonth.reduce((s, r) => s + r.gmv, 0);
+  const penetrationPct  = filteredQcomGMV > 0 ? filteredGMV / filteredQcomGMV * 100 : null;
+
+  // Penetration MoM in bps
+  const qcomLastMonth = filteredQcomByCountryMonth.filter(r => r.period === lastMonth?.period).reduce((s, r) => s + r.gmv, 0);
+  const qcomPrevMonth = filteredQcomByCountryMonth.filter(r => r.period === prevMonth?.period).reduce((s, r) => s + r.gmv, 0);
+  const penetrationLast = qcomLastMonth > 0 && lastMonth ? lastMonth.gmv / qcomLastMonth * 100 : null;
+  const penetrationPrev = qcomPrevMonth > 0 && prevMonth ? prevMonth.gmv / qcomPrevMonth * 100 : null;
+  const penetrationMoMBps = penetrationLast !== null && penetrationPrev !== null
+    ? Math.round((penetrationLast - penetrationPrev) * 100) : null;
 
   // ── Vertical MoM ────────────────────────────────────────────────
   const verticalMoM = {};
@@ -389,6 +404,16 @@ export default function Dashboard() {
               accent="gray"
               delay={240}
             />
+            {penetrationPct !== null && (
+              <KPICard
+                title="Beauty Penetration"
+                value={`${penetrationPct.toFixed(2)}%`}
+                subtitle={`Target: 10% · ${penetrationMoMBps !== null ? `${penetrationMoMBps > 0 ? '+' : ''}${penetrationMoMBps} bps MoM` : 'of total Qcom GMV'}`}
+                icon="🎯"
+                accent={penetrationPct >= 10 ? 'green' : penetrationPct >= 5 ? 'yellow' : 'gray'}
+                delay={320}
+              />
+            )}
           </div>
 
           {/* ── Vertical summary strip ─────────────────────────────── */}
@@ -505,6 +530,16 @@ export default function Dashboard() {
             filterLabel={filterLabel}
           />
 
+          {/* ── Penetration Trend ─────────────────────────────────── */}
+          {filteredQcomByCountryMonth.length > 0 && (
+            <PenetrationTrendChart
+              beautyByCountryMonth={filteredByCountryMonth}
+              qcomByCountryMonth={filteredQcomByCountryMonth}
+              selectedCountries={selected}
+              filterLabel={filterLabel}
+            />
+          )}
+
           {/* ── Retail vs MFC (always shows both verticals) ───────── */}
           <VerticalComparisonChart
             byVerticalCountryMonth={filterByPeriod(byVerticalCountryMonth || [])
@@ -524,6 +559,7 @@ export default function Dashboard() {
             filteredPeriods={filteredPeriods}
             totalGMV={filteredGMV}
             totalOrders={filteredOrders}
+            qcomByCountryMonth={filteredQcomByCountryMonth}
           />
 
           {/* ── Partners ──────────────────────────────────────────── */}
