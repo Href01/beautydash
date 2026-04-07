@@ -133,11 +133,12 @@ export default function Dashboard() {
   };
 
   const getMonthlyTotalSource = () => {
-    if (verticalFilter === 'all') return monthlyTotal;
-    // Rebuild monthly total from byVerticalCountryMonth for selected vertical
-    const filtered = (byVerticalCountryMonth || []).filter(r => r.vertical === verticalFilter);
+    // Always rebuild from country-filtered source so country filter is respected
+    const source = verticalFilter === 'all'
+      ? (byCountryMonth || []).filter(r => selected.includes(r.country))
+      : (byVerticalCountryMonth || []).filter(r => r.vertical === verticalFilter && selected.includes(r.country));
     const map = {};
-    filtered.forEach(r => {
+    source.forEach(r => {
       if (!map[r.period]) map[r.period] = { period: r.period, gmv: 0, orders: 0 };
       map[r.period].gmv    += r.gmv;
       map[r.period].orders += r.orders;
