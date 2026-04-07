@@ -93,7 +93,6 @@ export default function Dashboard() {
     summary,
     byCountryMonth,
     byVerticalCountryMonth,
-    monthlyTotal,
     growth,
     partners,
     qcom,
@@ -201,18 +200,32 @@ export default function Dashboard() {
   const groceriesGMV = verticalGMV['Groceries'] || 0;
 
   // ── Qcom penetration ──────────────────────────────────────────
-  const filteredQcomByCountryMonth = filterByPeriod(qcom?.byCountryMonth || [])
+  // Africa penetration: beauty GMV / Africa Qcom GMV (per country, filter-aware)
+  const filteredQcomByCountryMonth = filterByPeriod(qcom?.africaByCountryMonth || [])
     .filter(r => selected.includes(r.country));
-  const filteredQcomGMV = filteredQcomByCountryMonth.reduce((s, r) => s + r.gmv, 0);
-  const penetrationPct  = filteredQcomGMV > 0 ? filteredGMV / filteredQcomGMV * 100 : null;
+  const filteredQcomGMV   = filteredQcomByCountryMonth.reduce((s, r) => s + r.gmv, 0);
+  const penetrationPct    = filteredQcomGMV > 0 ? filteredGMV / filteredQcomGMV * 100 : null;
 
-  // Penetration MoM in bps
-  const qcomLastMonth = filteredQcomByCountryMonth.filter(r => r.period === lastMonth?.period).reduce((s, r) => s + r.gmv, 0);
-  const qcomPrevMonth = filteredQcomByCountryMonth.filter(r => r.period === prevMonth?.period).reduce((s, r) => s + r.gmv, 0);
-  const penetrationLast = qcomLastMonth > 0 && lastMonth ? lastMonth.gmv / qcomLastMonth * 100 : null;
-  const penetrationPrev = qcomPrevMonth > 0 && prevMonth ? prevMonth.gmv / qcomPrevMonth * 100 : null;
+  // Africa penetration MoM in bps
+  const qcomLastMonth     = filteredQcomByCountryMonth.filter(r => r.period === lastMonth?.period).reduce((s, r) => s + r.gmv, 0);
+  const qcomPrevMonth     = filteredQcomByCountryMonth.filter(r => r.period === prevMonth?.period).reduce((s, r) => s + r.gmv, 0);
+  const penetrationLast   = qcomLastMonth > 0 && lastMonth ? lastMonth.gmv / qcomLastMonth * 100 : null;
+  const penetrationPrev   = qcomPrevMonth > 0 && prevMonth ? prevMonth.gmv / qcomPrevMonth * 100 : null;
   const penetrationMoMBps = penetrationLast !== null && penetrationPrev !== null
     ? Math.round((penetrationLast - penetrationPrev) * 100) : null;
+
+  // Global share: beauty Africa GMV / all-markets Qcom GMV (no country filter — global denominator)
+  const filteredGlobalQcomByMonth = filterByPeriod(qcom?.globalByMonth || []);
+  const filteredGlobalQcomGMV     = filteredGlobalQcomByMonth.reduce((s, r) => s + r.gmv, 0);
+  const globalSharePct            = filteredGlobalQcomGMV > 0 ? filteredGMV / filteredGlobalQcomGMV * 100 : null;
+
+  // Global share MoM in bps
+  const globalQcomLast   = filteredGlobalQcomByMonth.find(r => r.period === lastMonth?.period)?.gmv || 0;
+  const globalQcomPrev   = filteredGlobalQcomByMonth.find(r => r.period === prevMonth?.period)?.gmv || 0;
+  const globalShareLast  = globalQcomLast > 0 && lastMonth ? lastMonth.gmv / globalQcomLast * 100 : null;
+  const globalSharePrev  = globalQcomPrev > 0 && prevMonth ? prevMonth.gmv / globalQcomPrev * 100 : null;
+  const globalShareMoMBps = globalShareLast !== null && globalSharePrev !== null
+    ? Math.round((globalShareLast - globalSharePrev) * 100) : null;
 
   // ── Vertical MoM ────────────────────────────────────────────────
   const verticalMoM = {};
@@ -406,12 +419,22 @@ export default function Dashboard() {
             />
             {penetrationPct !== null && (
               <KPICard
-                title="Beauty Penetration"
+                title="Africa Penetration"
                 value={`${penetrationPct.toFixed(2)}%`}
-                subtitle={`Target: 10% · ${penetrationMoMBps !== null ? `${penetrationMoMBps > 0 ? '+' : ''}${penetrationMoMBps} bps MoM` : 'of total Qcom GMV'}`}
+                subtitle={`vs Africa Qcom · target 10% · ${penetrationMoMBps !== null ? `${penetrationMoMBps > 0 ? '+' : ''}${penetrationMoMBps} bps MoM` : ''}`}
                 icon="🎯"
                 accent={penetrationPct >= 10 ? 'green' : penetrationPct >= 5 ? 'yellow' : 'gray'}
                 delay={320}
+              />
+            )}
+            {globalSharePct !== null && (
+              <KPICard
+                title="Global Share"
+                value={`${globalSharePct.toFixed(3)}%`}
+                subtitle={`Africa beauty vs all Glovo markets · ${globalShareMoMBps !== null ? `${globalShareMoMBps > 0 ? '+' : ''}${globalShareMoMBps} bps MoM` : ''}`}
+                icon="🌐"
+                accent="blue"
+                delay={400}
               />
             )}
           </div>
@@ -535,6 +558,7 @@ export default function Dashboard() {
             <PenetrationTrendChart
               beautyByCountryMonth={filteredByCountryMonth}
               qcomByCountryMonth={filteredQcomByCountryMonth}
+              globalQcomByMonth={filteredGlobalQcomByMonth}
               selectedCountries={selected}
               filterLabel={filterLabel}
             />
