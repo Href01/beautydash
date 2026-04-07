@@ -1,10 +1,11 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 import { fmt, fmtPct, trendColor, COUNTRY_META } from '../lib/constants';
 
+const PAGE_SIZE     = 20;
 const MAX_SELECT    = 5;
 const STORE_COLORS  = ['#FFC244', '#00A082', '#3B82F6', '#F97316', '#EC4899'];
 
@@ -24,6 +25,10 @@ function shortLabel(period) {
 export default function PartnersTable({ byPartnerMonth, cvrByPartnerMonth }) {
   const [selected, setSelected] = useState(new Set());
   const [metric, setMetric]     = useState('cvr');
+  const [page, setPage]         = useState(1);
+
+  // Reset to page 1 whenever the data changes (filter applied)
+  useEffect(() => { setPage(1); }, [byPartnerMonth, cvrByPartnerMonth]);
 
   if (!byPartnerMonth?.length) return null;
 
@@ -180,7 +185,8 @@ export default function PartnersTable({ byPartnerMonth, cvrByPartnerMonth }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50 dark:divide-gray-700">
-            {partners.map((p, i) => {
+            {partners.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((p, i) => {
+              const i_abs = (page - 1) * PAGE_SIZE + i; // absolute rank across all pages
               const key      = `${p.country}__${p.partner}`;
               const isSelected = selected.has(key);
               const selIdx   = selectedList.indexOf(key);
@@ -213,7 +219,7 @@ export default function PartnersTable({ byPartnerMonth, cvrByPartnerMonth }) {
                       <span className="inline-block w-3 h-3 rounded-full border-2 border-gray-300 dark:border-gray-600" />
                     )}
                   </td>
-                  <td className="px-4 py-3 text-xs font-bold text-gray-300 dark:text-gray-600">{i + 1}</td>
+                  <td className="px-4 py-3 text-xs font-bold text-gray-300 dark:text-gray-600">{i_abs + 1}</td>
                   <td className="px-4 py-3 font-medium text-gray-900 dark:text-white max-w-[200px] truncate">
                     {p.partner}
                   </td>
@@ -266,6 +272,48 @@ export default function PartnersTable({ byPartnerMonth, cvrByPartnerMonth }) {
           </tbody>
         </table>
       </div>
+
+      {/* ── Pagination ── */}
+      {partners.length > PAGE_SIZE && (() => {
+        const totalPages = Math.ceil(partners.length / PAGE_SIZE);
+        const pages = Array.from({ length: totalPages }, (_, i) => i + 1);
+        return (
+          <div className="px-5 py-3 border-t border-gray-50 dark:border-gray-700 flex items-center justify-between">
+            <span className="text-xs text-gray-400">
+              {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, partners.length)} of {partners.length} partners
+            </span>
+            <div className="flex gap-1">
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="px-2.5 py-1 rounded-lg text-xs font-bold text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30 transition-colors"
+              >
+                ←
+              </button>
+              {pages.map(p => (
+                <button
+                  key={p}
+                  onClick={() => setPage(p)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors ${
+                    p === page
+                      ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900'
+                      : 'text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+              <button
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="px-2.5 py-1 rounded-lg text-xs font-bold text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30 transition-colors"
+              >
+                →
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Comparison Chart ── */}
       {selected.size > 0 && chartData.length > 0 && (
