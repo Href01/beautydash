@@ -143,13 +143,17 @@ export default function PartnersTable({ byPartnerMonth, cvrByPartnerMonth }) {
           <p className="text-xs text-gray-400 mt-0.5">Retail · selected countries & period · ranked by GMV · Sessions & CVR averaged per month</p>
         </div>
         <div className="flex items-center gap-3">
-          {selected.size > 0 && (
+          {selected.size > 0 ? (
             <button
               onClick={() => setSelected(new Set())}
               className="text-xs text-gray-400 hover:text-red-400 transition-colors"
             >
               Clear selection ({selected.size})
             </button>
+          ) : (
+            <span className="text-xs text-gray-400 italic">
+              Click up to {MAX_SELECT} rows to compare trends
+            </span>
           )}
           {hasCVR && (
             <span className="text-xs text-gray-400">
@@ -345,11 +349,6 @@ export default function PartnersTable({ byPartnerMonth, cvrByPartnerMonth }) {
         </div>
       )}
 
-      {selected.size === 0 && (
-        <div className="px-6 py-3 border-t border-gray-50 dark:border-gray-700">
-          <p className="text-xs text-gray-400">Click up to {MAX_SELECT} partners to compare their metrics over time</p>
-        </div>
-      )}
     </div>
   );
 }

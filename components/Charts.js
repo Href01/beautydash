@@ -4,7 +4,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, ReferenceLine,
 } from 'recharts';
-import { fmt, COUNTRY_META } from '../lib/constants';
+import { fmt, COUNTRY_META, VERTICAL_COLORS } from '../lib/constants';
 
 // ── Shared Tooltip ─────────────────────────────────────────────
 const ChartTooltip = ({ active, payload, label, isPctChart }) => {
@@ -37,7 +37,7 @@ const axisStyle  = { fontSize: 11, fill: '#9CA3AF' };
 const gridStyle  = { strokeDasharray: '3 3', stroke: '#374151', opacity: 0.25 };
 
 // ── GMV Trend by Country ───────────────────────────────────────
-export function GMVTrendChart({ byCountryMonth, selectedCountries }) {
+export function GMVTrendChart({ byCountryMonth, selectedCountries, filterLabel }) {
   const map = {};
   byCountryMonth.forEach(r => {
     if (!selectedCountries.includes(r.country)) return;
@@ -49,7 +49,7 @@ export function GMVTrendChart({ byCountryMonth, selectedCountries }) {
   return (
     <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm">
       <h3 className="font-bold text-gray-900 dark:text-white mb-0.5">GMV Trend by Country</h3>
-      <p className="text-xs text-gray-400 mb-5">Monthly beauty GMV · selected vertical</p>
+      <p className="text-xs text-gray-400 mb-5">{filterLabel || 'Monthly beauty GMV · selected vertical'}</p>
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
           <CartesianGrid {...gridStyle} />
@@ -69,12 +69,12 @@ export function GMVTrendChart({ byCountryMonth, selectedCountries }) {
 }
 
 // ── Monthly Total GMV ──────────────────────────────────────────
-export function MonthlyTotalChart({ monthlyTotal }) {
+export function MonthlyTotalChart({ monthlyTotal, filterLabel }) {
   const data = monthlyTotal.map(m => ({ period: m.period, GMV: m.gmv }));
   return (
     <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm">
       <h3 className="font-bold text-gray-900 dark:text-white mb-0.5">Total Monthly GMV</h3>
-      <p className="text-xs text-gray-400 mb-5">All countries combined · selected vertical</p>
+      <p className="text-xs text-gray-400 mb-5">{filterLabel || 'All countries combined · selected vertical'}</p>
       <ResponsiveContainer width="100%" height={300}>
         <BarChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
           <CartesianGrid {...gridStyle} />
@@ -119,7 +119,7 @@ const METRICS = [
   { key: 'aov',    label: 'AOV',      isPct: false },
 ];
 
-export function EvolutionChart({ byCountryMonth, selectedCountries }) {
+export function EvolutionChart({ byCountryMonth, selectedCountries, filterLabel }) {
   const [metric, setMetric] = useState('gmv');
   const isPct = METRICS.find(m => m.key === metric)?.isPct;
 
@@ -170,9 +170,9 @@ export function EvolutionChart({ byCountryMonth, selectedCountries }) {
         </div>
       </div>
       <p className="text-xs text-gray-400 mb-5">
-        {metric === 'aov'
+        {filterLabel || (metric === 'aov'
           ? 'Average order value by country · selected vertical'
-          : `MoM ${metric === 'gmv' ? 'GMV' : 'orders'} growth % · selected vertical`}
+          : `MoM ${metric === 'gmv' ? 'GMV' : 'orders'} growth % · selected vertical`)}
       </p>
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
@@ -197,7 +197,6 @@ export function EvolutionChart({ byCountryMonth, selectedCountries }) {
 }
 
 // ── Vertical Comparison Chart ──────────────────────────────────
-const VERTICAL_COLORS = { Retail: '#FFC244', MFC: '#00A082', Groceries: '#3B82F6' };
 
 export function VerticalComparisonChart({ byVerticalCountryMonth, selectedCountries, verticalFilter = 'all' }) {
   // byVerticalCountryMonth is already filtered by period + country in the parent

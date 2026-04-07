@@ -92,8 +92,7 @@ export default function CountryTable({ byCountry, byCountryMonth, allByCountryMo
                 YoY Growth
                 <span className="ml-1 text-gray-300 normal-case font-normal">(2024 vs 2025)</span>
               </th>
-              <th className="px-5 py-3 text-left">Status</th>
-              <th className="px-5 py-3 text-left">Insight</th>
+              <th className="px-5 py-3 text-left">Status & Insight</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50 dark:divide-gray-700">
@@ -150,13 +149,13 @@ export default function CountryTable({ byCountry, byCountryMonth, allByCountryMo
                       <span className="text-gray-300">—</span>
                     )}
                   </td>
-                  <td className="px-5 py-4">
-                    <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-bold ${status.color}`}>
+                  <td className="px-5 py-4 max-w-xs">
+                    <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-bold ${status.color} mb-1`}>
                       {status.label}
                     </span>
-                  </td>
-                  <td className="px-5 py-4 text-xs text-gray-400 max-w-xs">
-                    {getSmartInsight(row, g, gmvPct, byCountryMonth, byCountry, filteredPeriods)}
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-snug">
+                      {getSmartInsight(row, g, gmvPct, byCountryMonth, byCountry, filteredPeriods)}
+                    </p>
                   </td>
                 </tr>
               );
@@ -172,7 +171,6 @@ export default function CountryTable({ byCountry, byCountryMonth, allByCountryMo
               <td className="px-5 py-3 text-right text-gray-900 dark:text-white">
                 €{totalOrders > 0 ? (totalGMV / totalOrders).toFixed(2) : '0.00'}
               </td>
-              <td className="px-5 py-3" />
               <td className="px-5 py-3" />
               <td className="px-5 py-3" />
             </tr>

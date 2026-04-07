@@ -5,8 +5,8 @@ import KPICard from '../components/KPICard';
 import CountryTable from '../components/CountryTable';
 import PartnersTable from '../components/PartnersTable';
 import InsightsPanel from '../components/InsightsPanel';
-import { GMVTrendChart, MonthlyTotalChart, CountryShareChart, EvolutionChart, VerticalComparisonChart } from '../components/Charts';
-import { fmt, COUNTRIES, COUNTRY_META } from '../lib/constants';
+import { GMVTrendChart, MonthlyTotalChart, EvolutionChart, VerticalComparisonChart } from '../components/Charts';
+import { fmt, fmtPct, trendColor, COUNTRIES, COUNTRY_META, VERTICAL_COLORS } from '../lib/constants';
 
 const PERIOD_FILTERS = [
   { label: 'All time', value: 'all' },
@@ -179,8 +179,12 @@ export default function Dashboard() {
 
   const lastMonth = filteredMonthlyTotal?.[filteredMonthlyTotal.length - 1];
   const prevMonth = filteredMonthlyTotal?.[filteredMonthlyTotal.length - 2];
-  const lastMoM   = lastMonth && prevMonth && prevMonth.gmv > 0
+  const lastMoM        = lastMonth && prevMonth && prevMonth.gmv > 0
     ? ((lastMonth.gmv - prevMonth.gmv) / prevMonth.gmv * 100) : null;
+  const lastMoMOrders  = lastMonth && prevMonth && prevMonth.orders > 0
+    ? ((lastMonth.orders - prevMonth.orders) / prevMonth.orders * 100) : null;
+  const lastMoMAOV     = lastMonth && prevMonth && prevMonth.aov > 0
+    ? ((lastMonth.aov - prevMonth.aov) / prevMonth.aov * 100) : null;
 
   // ── Vertical breakdown (respects period + country filters) ──────
   const filteredVCM = filterByPeriod(byVerticalCountryMonth || [])
@@ -193,6 +197,49 @@ export default function Dashboard() {
   const retailGMV    = verticalGMV['Retail']    || 0;
   const mfcGMV       = verticalGMV['MFC']       || 0;
   const groceriesGMV = verticalGMV['Groceries'] || 0;
+
+  // ── Vertical MoM ────────────────────────────────────────────────
+  const verticalMoM = {};
+  ['Retail', 'MFC', 'Groceries'].forEach(v => {
+    const rows    = filteredVCM.filter(r => r.vertical === v);
+    const periods = [...new Set(rows.map(r => r.period))].sort();
+    if (periods.length >= 2) {
+      const lastP  = periods[periods.length - 1];
+      const prevP  = periods[periods.length - 2];
+      const lastG  = rows.filter(r => r.period === lastP).reduce((s, r) => s + r.gmv, 0);
+      const prevG  = rows.filter(r => r.period === prevP).reduce((s, r) => s + r.gmv, 0);
+      verticalMoM[v] = prevG > 0 ? (lastG - prevG) / prevG * 100 : null;
+    } else {
+      verticalMoM[v] = null;
+    }
+  });
+
+  // ── Filter label for chart subtitles ────────────────────────────
+  const periodLabel = periodFilter === 'all' && meta?.periodStart
+    ? `${meta.periodStart}–${meta.periodEnd}`
+    : (PERIOD_FILTERS.find(f => f.value === periodFilter)?.label || periodFilter);
+  const filterLabel = [
+    verticalFilter !== 'all' ? verticalFilter : 'All verticals',
+    selected.length < COUNTRIES.length ? selected.join(', ') : 'All markets',
+    periodLabel,
+  ].join(' · ');
+
+  // ── Market × Vertical heatmap data ──────────────────────────────
+  const HEATMAP_VERTICALS = ['Retail', 'MFC', 'Groceries'];
+  const heatmapRaw = {};
+  filteredVCM.forEach(r => {
+    if (!heatmapRaw[r.country]) heatmapRaw[r.country] = { Retail: 0, MFC: 0, Groceries: 0 };
+    if (HEATMAP_VERTICALS.includes(r.vertical)) heatmapRaw[r.country][r.vertical] += r.gmv;
+  });
+  const heatmapRows = COUNTRIES
+    .filter(c => selected.includes(c))
+    .map(c => ({ country: c, ...(heatmapRaw[c] || { Retail: 0, MFC: 0, Groceries: 0 }) }))
+    .sort((a, b) => (b.Retail + b.MFC + b.Groceries) - (a.Retail + a.MFC + a.Groceries));
+  const heatmapMax = {
+    Retail:    Math.max(...heatmapRows.map(r => r.Retail),    1),
+    MFC:       Math.max(...heatmapRows.map(r => r.MFC),       1),
+    Groceries: Math.max(...heatmapRows.map(r => r.Groceries), 1),
+  };
 
   return (
     <div className={dark ? 'dark' : ''}>
@@ -276,7 +323,9 @@ export default function Dashboard() {
                       ? 'bg-gray-800 dark:bg-white text-white dark:text-gray-900'
                       : 'bg-gray-100 dark:bg-gray-800 text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
                   }`}>
-                  {f.label}
+                  {f.value === 'all' && meta?.periodStart
+                    ? `All (${meta.periodStart}–${meta.periodEnd})`
+                    : f.label}
                 </button>
               ))}
             </div>
@@ -317,6 +366,7 @@ export default function Dashboard() {
               title="Total Orders"
               value={filteredOrders.toLocaleString()}
               subtitle={verticalFilter === 'all' ? 'All verticals' : verticalFilter}
+              trend={lastMoMOrders}
               icon="📦"
               accent="green"
               delay={80}
@@ -325,6 +375,7 @@ export default function Dashboard() {
               title="Avg Order Value"
               value={`€${filteredAOV.toFixed(2)}`}
               subtitle={verticalFilter === 'all' ? 'All verticals' : verticalFilter}
+              trend={lastMoMAOV}
               icon="🛒"
               accent="blue"
               delay={160}
@@ -342,59 +393,116 @@ export default function Dashboard() {
           {/* ── Vertical summary strip ─────────────────────────────── */}
           {verticalFilter === 'all' && (
             <div className="grid grid-cols-3 gap-4">
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-4 flex items-center justify-between border-l-4 border-yellow-400">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Retail GMV</p>
-                  <p className="text-2xl font-black text-gray-900 dark:text-white">{fmt(retailGMV)}</p>
-                  <p className="text-xs text-gray-400">
-                    {filteredGMV > 0 ? (retailGMV / filteredGMV * 100).toFixed(1) : 0}% of total
-                  </p>
+              {[
+                { label: 'Retail GMV',    gmv: retailGMV,    v: 'Retail',    icon: '🏪', border: 'border-amber-500' },
+                { label: 'MFC GMV',       gmv: mfcGMV,       v: 'MFC',       icon: '🏭', border: 'border-teal-500'  },
+                { label: 'Groceries GMV', gmv: groceriesGMV, v: 'Groceries', icon: '🛒', border: 'border-blue-500'  },
+              ].map(({ label, gmv, v, icon, border }) => (
+                <div key={v} className={`bg-white dark:bg-gray-800 rounded-xl p-4 flex items-center justify-between border-l-4 ${border}`}>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-gray-400">{label}</p>
+                    <p className="text-2xl font-black text-gray-900 dark:text-white">{fmt(gmv)}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <p className="text-xs text-gray-400">
+                        {filteredGMV > 0 ? (gmv / filteredGMV * 100).toFixed(1) : 0}% of total
+                      </p>
+                      {verticalMoM[v] !== null && verticalMoM[v] !== undefined && (
+                        <span className={`text-xs font-bold ${trendColor(verticalMoM[v])}`}>
+                          {fmtPct(verticalMoM[v])} MoM
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <span className="text-3xl">{icon}</span>
                 </div>
-                <span className="text-3xl">🏪</span>
-              </div>
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-4 flex items-center justify-between border-l-4 border-green-500">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wider text-gray-400">MFC GMV</p>
-                  <p className="text-2xl font-black text-gray-900 dark:text-white">{fmt(mfcGMV)}</p>
-                  <p className="text-xs text-gray-400">
-                    {filteredGMV > 0 ? (mfcGMV / filteredGMV * 100).toFixed(1) : 0}% of total
-                  </p>
-                </div>
-                <span className="text-3xl">🏭</span>
-              </div>
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-4 flex items-center justify-between border-l-4 border-blue-500">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Groceries GMV</p>
-                  <p className="text-2xl font-black text-gray-900 dark:text-white">{fmt(groceriesGMV)}</p>
-                  <p className="text-xs text-gray-400">
-                    {filteredGMV > 0 ? (groceriesGMV / filteredGMV * 100).toFixed(1) : 0}% of total
-                  </p>
-                </div>
-                <span className="text-3xl">🛒</span>
-              </div>
+              ))}
             </div>
           )}
 
+
+          {/* ── Key Insights (moved up — first thing stakeholders see) ── */}
+          <InsightsPanel
+            summary={summary}
+            byCountry={filteredByCountry}
+            totalGMV={filteredGMV}
+            growth={growth}
+            monthlyTotal={filteredMonthlyTotal}
+          />
+
+          {/* ── Market × Vertical Heatmap ─────────────────────────── */}
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
+            <div className="p-5 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-gray-900 dark:text-white">Market × Vertical GMV</h3>
+                <p className="text-xs text-gray-400 mt-0.5">{filterLabel} · intensity = share of column max</p>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 dark:bg-gray-900 text-xs font-bold uppercase tracking-wider">
+                    <th className="px-5 py-3 text-left text-gray-400">Market</th>
+                    {HEATMAP_VERTICALS.map(v => (
+                      <th key={v} className="px-5 py-3 text-right" style={{ color: VERTICAL_COLORS[v] }}>{v}</th>
+                    ))}
+                    <th className="px-5 py-3 text-right text-gray-400">Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50 dark:divide-gray-700">
+                  {heatmapRows.map(row => {
+                    const meta  = COUNTRY_META[row.country] || {};
+                    const total = row.Retail + row.MFC + row.Groceries;
+                    return (
+                      <tr key={row.country} className="hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors">
+                        <td className="px-5 py-3">
+                          <div className="flex items-center gap-2">
+                            <span>{meta.flag || '🌍'}</span>
+                            <span className="font-bold text-gray-900 dark:text-white">{row.country}</span>
+                            <span className="text-xs text-gray-400">{meta.name}</span>
+                          </div>
+                        </td>
+                        {HEATMAP_VERTICALS.map(v => {
+                          const val      = row[v];
+                          const opacity  = heatmapMax[v] > 0 ? val / heatmapMax[v] : 0;
+                          const color    = VERTICAL_COLORS[v];
+                          return (
+                            <td key={v} className="px-5 py-3 text-right">
+                              <div
+                                className="inline-flex items-center justify-end px-3 py-1 rounded-lg font-bold text-sm"
+                                style={{ background: `${color}${Math.round(opacity * 200).toString(16).padStart(2, '0')}`, color: opacity > 0.6 ? '#fff' : '' }}
+                              >
+                                {val > 0 ? fmt(val) : <span className="text-gray-300 font-normal text-xs">—</span>}
+                              </div>
+                            </td>
+                          );
+                        })}
+                        <td className="px-5 py-3 text-right font-bold text-gray-700 dark:text-gray-200">
+                          {total > 0 ? fmt(total) : '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
 
           {/* ── Charts Row 1 ──────────────────────────────────────── */}
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
             <GMVTrendChart
               byCountryMonth={filteredByCountryMonth}
               selectedCountries={selected}
+              filterLabel={filterLabel}
             />
-            <MonthlyTotalChart monthlyTotal={filteredMonthlyTotal} />
+            <MonthlyTotalChart monthlyTotal={filteredMonthlyTotal} filterLabel={filterLabel} />
           </div>
 
-          {/* ── Charts Row 2 ──────────────────────────────────────── */}
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-            <CountryShareChart
-              byCountry={filteredByCountry.filter(c => selected.includes(c.country))}
-            />
-            <EvolutionChart
-              byCountryMonth={filteredByCountryMonth}
-              selectedCountries={selected}
-            />
-          </div>
+          {/* ── Evolution Chart (full width) ──────────────────────── */}
+          <EvolutionChart
+            byCountryMonth={filteredByCountryMonth}
+            selectedCountries={selected}
+            filterLabel={filterLabel}
+          />
 
           {/* ── Retail vs MFC (always shows both verticals) ───────── */}
           <VerticalComparisonChart
@@ -420,14 +528,6 @@ export default function Dashboard() {
           {/* ── Partners ──────────────────────────────────────────── */}
           <PartnersTable byPartnerMonth={filteredPartnerMonth} cvrByPartnerMonth={filteredCVRMonth} />
 
-          {/* ── Insights ──────────────────────────────────────────── */}
-          <InsightsPanel
-            summary={summary}
-            byCountry={filteredByCountry}
-            totalGMV={filteredGMV}
-            growth={growth}
-            monthlyTotal={filteredMonthlyTotal}
-          />
 
           <p className="text-center text-xs text-gray-300 dark:text-gray-700 pb-4">
             Glovo Q-Commerce Africa · Beauty · Internal use only
