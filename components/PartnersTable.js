@@ -321,8 +321,6 @@ export default function PartnersTable({ byPartnerMonth, cvrByPartnerMonth }) {
                 labelStyle={{ fontWeight: 'bold', fontSize: 12 }}
                 contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
               />
-              {metric === 'cvr' && (
-              )}
               {selectedList.map(key => (
                 <Line
                   key={key}
