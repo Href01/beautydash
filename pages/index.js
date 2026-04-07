@@ -431,7 +431,7 @@ export default function Dashboard() {
               <KPICard
                 title="Global Share"
                 value={`${globalSharePct.toFixed(3)}%`}
-                subtitle={`Africa beauty vs all Glovo markets · ${globalShareMoMBps !== null ? `${globalShareMoMBps > 0 ? '+' : ''}${globalShareMoMBps} bps MoM` : ''}`}
+                subtitle={`${selected.length < COUNTRIES.length ? selected.join(', ') : 'Africa'} beauty vs all Glovo markets${globalShareMoMBps !== null ? ` · ${globalShareMoMBps > 0 ? '+' : ''}${globalShareMoMBps} bps MoM` : ''}`}
                 icon="🌐"
                 accent="blue"
                 delay={400}
