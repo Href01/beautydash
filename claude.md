@@ -1,11 +1,11 @@
 ## ARCHITECTURE
 
-**Backend:** Google Apps Script web app — reads all Sheets tabs, aggregates, returns JSON.
-**Frontend:** Next.js — `/api/data.js` is a thin proxy to `APPS_SCRIPT_URL`. No direct Sheets API calls.
+**Backend:** Next.js API route (`/api/data.js`) — authenticates with a Google service account, fetches all Sheets tabs in a single `batchGet`, aggregates everything, returns JSON.
+**Frontend:** Next.js — fetches `/api/data` on mount.
 **Deploy:** Vercel — auto-deploys on every push to `master`.
 
 ```
-Browser → /api/data.js (proxy) → APPS_SCRIPT_URL → Google Sheets
+Browser → /api/data.js → Google Sheets API (service account) → Spreadsheet tabs
 ```
 
 ---
@@ -36,7 +36,7 @@ The Apps Script (`CONFIG.sources`) defines which tabs to read and the column map
 - `OPS-CTRY` → Operational metrics (prep time, uptime, cancellation rate)
 
 ### HOW TO ADD A NEW TAB
-Add one entry to `CONFIG.sources` in the Apps Script. No changes needed in Next.js — everything updates automatically once the Apps Script is redeployed and cache is cleared.
+Add one entry to the `SOURCES` array in `pages/api/data.js`. Everything updates automatically — no other changes needed.
 
 ---
 
@@ -229,9 +229,10 @@ No new data needed. Auto-generate action items per POC by combining all layers.
 
 ## ENV VARIABLES
 ```
-APPS_SCRIPT_URL   # deployed Apps Script web app URL (exec endpoint)
+GOOGLE_SPREADSHEET_ID         # from sheet URL
+GOOGLE_SERVICE_ACCOUNT_EMAIL  # from service account JSON
+GOOGLE_PRIVATE_KEY            # from service account JSON — keep \n as literal \\n
 ```
-The Google service account vars (`GOOGLE_SPREADSHEET_ID`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_PRIVATE_KEY`) are no longer used — auth is handled inside the Apps Script.
 
 ## DEPLOY WORKFLOW
 ```bash
@@ -239,7 +240,6 @@ git add .
 git commit -m "description"
 git push origin master
 # Vercel auto-deploys on push to master
-# After Apps Script changes: run clearCache() in Apps Script editor
 ```
 
 ---
