@@ -52,6 +52,20 @@ const SOURCES = [
       orders:  'bought_products_number_of_distinct_delivered_orders',
     }
   },
+  {
+    tab:      'Part_CVR',
+    vertical: 'PartnerCVR',
+    range:    'A:G',
+    columns: {
+      country:        'qc_session_store_origin_country_code',
+      month:          'qc_session_store_origin_p_creation_month',
+      year:           'qc_session_store_origin_p_creation_year',
+      partner:        'qc_session_store_origin_store_name',
+      cvr:            'qc_session_store_origin_conversion_rate',
+      sessions:       'qc_session_store_origin_number_of_sessions',
+      orders_created: 'qc_session_store_origin_number_of_orders_created',
+    }
+  },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -86,13 +100,19 @@ function readRows(values, vertical, columns) {
     const { year, month } = parsePeriod(rawMonth, rawYear);
     const gmv     = col.gmv    >= 0 ? parseFloat(row[col.gmv])   || 0 : 0;
     const orders  = col.orders >= 0 ? parseInt(row[col.orders])  || 0 : 0;
-    const partner = col.partner >= 0 ? String(row[col.partner] || '').trim() : null;
+    const partner        = col.partner        >= 0 ? String(row[col.partner]        || '').trim() : null;
+    const cvr            = col.cvr            >= 0 ? parseFloat(row[col.cvr])        || 0 : null;
+    const sessions       = col.sessions       >= 0 ? parseInt(row[col.sessions])     || 0 : null;
+    const orders_created = col.orders_created >= 0 ? parseInt(row[col.orders_created])|| 0 : null;
 
     if (!country || !month || !year) continue;
     const period = `${year}-${String(month).padStart(2, '0')}`;
 
     const entry = { country, month, year, period, gmv, orders, vertical };
-    if (partner !== null) entry.partner = partner;
+    if (partner        !== null) entry.partner        = partner;
+    if (cvr            !== null) entry.cvr            = cvr;
+    if (sessions       !== null) entry.sessions       = sessions;
+    if (orders_created !== null) entry.orders_created = orders_created;
     rows.push(entry);
   }
   return rows;
@@ -304,6 +324,30 @@ function buildPartners(rows) {
   return { byPartnerMonth, totals };
 }
 
+function buildPartnerCVR(rows) {
+  if (!rows.length) return [];
+
+  // Aggregate sessions + orders_created per partner+country+period
+  // CVR = orders_created / sessions (blended, not average of CVRs)
+  const map = {};
+  rows.forEach(r => {
+    if (!r.partner) return;
+    const key = `${r.partner}__${r.country}__${r.period}`;
+    if (!map[key]) map[key] = { partner: r.partner, country: r.country, period: r.period, sessions: 0, orders_created: 0 };
+    map[key].sessions       += r.sessions       || 0;
+    map[key].orders_created += r.orders_created || 0;
+  });
+
+  return Object.values(map).map(r => ({
+    partner:        r.partner,
+    country:        r.country,
+    period:         r.period,
+    sessions:       r.sessions,
+    orders_created: r.orders_created,
+    cvr:            r.sessions > 0 ? r2(r.orders_created / r.sessions * 100) : 0,
+  })).sort((a, b) => a.period.localeCompare(b.period));
+}
+
 // ── Handler ───────────────────────────────────────────────────
 export default async function handler(req, res) {
   try {
@@ -324,15 +368,16 @@ export default async function handler(req, res) {
     });
 
     const currentPeriod = getCurrentPeriod();
-    let allRows = [], partnerRows = [];
+    let allRows = [], partnerRows = [], cvrRows = [];
 
     (response.data.valueRanges || []).forEach((vr, i) => {
       const source = SOURCES[i];
       const rows   = readRows(vr.values, source.vertical, source.columns)
         .filter(r => r.period !== currentPeriod);
 
-      if (source.vertical === 'Partners') partnerRows = partnerRows.concat(rows);
-      else                                allRows     = allRows.concat(rows);
+      if (source.vertical === 'Partners')    partnerRows = partnerRows.concat(rows);
+      else if (source.vertical === 'PartnerCVR') cvrRows = cvrRows.concat(rows);
+      else                                   allRows     = allRows.concat(rows);
     });
 
     if (allRows.length === 0) {
@@ -358,7 +403,10 @@ export default async function handler(req, res) {
       byVerticalCountryMonth: buildByVerticalCountryMonth(allRows),
       monthlyTotal:           buildMonthlyTotal(allRows),
       growth:                 buildGrowth(allRows),
-      partners:               buildPartners(partnerRows),
+      partners: {
+        ...buildPartners(partnerRows),
+        cvrByPartnerMonth: buildPartnerCVR(cvrRows),
+      },
     };
 
     res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate');

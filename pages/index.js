@@ -161,6 +161,8 @@ export default function Dashboard() {
   const filteredPeriods        = [...new Set(filteredMonthlyTotal.map(m => m.period))].sort();
   const filteredPartnerMonth   = filterByPeriod(partners?.byPartnerMonth || [])
     .filter(r => selected.includes(r.country));
+  const filteredCVRMonth       = filterByPeriod(partners?.cvrByPartnerMonth || [])
+    .filter(r => selected.includes(r.country));
 
   // ── Recalculate byCountry from filtered source ────────────────
   const filteredByCountry = COUNTRIES.map(country => {
@@ -412,7 +414,7 @@ export default function Dashboard() {
           />
 
           {/* ── Partners ──────────────────────────────────────────── */}
-          <PartnersTable byPartnerMonth={filteredPartnerMonth} />
+          <PartnersTable byPartnerMonth={filteredPartnerMonth} cvrByPartnerMonth={filteredCVRMonth} />
 
           {/* ── Insights ──────────────────────────────────────────── */}
           <InsightsPanel
