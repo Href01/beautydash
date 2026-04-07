@@ -41,13 +41,13 @@ export default function PartnersTable({ byPartnerMonth, cvrByPartnerMonth }) {
       : null;
     const sessions = cvrd ? cvrd.sessions : null;
 
-    // MoM CVR: compare last two periods
+    // MoM CVR: absolute change in bps (1 pp = 100 bps)
     let momCVR = null;
     if (cvrd && cvrd.periods.length >= 2) {
       cvrd.periods.sort((a, b) => a.period.localeCompare(b.period));
       const cLast = cvrd.periods[cvrd.periods.length - 1];
       const cPrev = cvrd.periods[cvrd.periods.length - 2];
-      if (cPrev.cvr > 0) momCVR = ((cLast.cvr - cPrev.cvr) / cPrev.cvr) * 100;
+      momCVR = Math.round((cLast.cvr - cPrev.cvr) * 100); // in bps
     }
 
     return { country: p.country, partner: p.partner, gmv: p.gmv, orders: p.orders, aov: p.orders > 0 ? p.gmv / p.orders : 0, momGMV, cvr, sessions, momCVR };
@@ -85,10 +85,10 @@ export default function PartnersTable({ byPartnerMonth, cvrByPartnerMonth }) {
               <th className="px-5 py-3 text-right">% Total</th>
               <th className="px-5 py-3 text-right">Orders</th>
               <th className="px-5 py-3 text-right">AOV</th>
-              <th className="px-5 py-3 text-right">Last MoM</th>
+              <th className="px-5 py-3 text-right">GMV MoM</th>
               {hasCVR && <th className="px-5 py-3 text-right">Sessions</th>}
               {hasCVR && <th className="px-5 py-3 text-right">CVR</th>}
-              {hasCVR && <th className="px-5 py-3 text-right">MoM CVR</th>}
+              {hasCVR && <th className="px-5 py-3 text-right">CVR Δ bps</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50 dark:divide-gray-700">
@@ -156,7 +156,9 @@ export default function PartnersTable({ byPartnerMonth, cvrByPartnerMonth }) {
                   {hasCVR && (
                     <td className="px-5 py-3 text-right">
                       {p.momCVR !== null ? (
-                        <span className={`text-xs font-bold ${trendColor(p.momCVR)}`}>{fmtPct(p.momCVR)}</span>
+                        <span className={`text-xs font-bold ${trendColor(p.momCVR)}`}>
+                          {p.momCVR > 0 ? '+' : ''}{p.momCVR} bps
+                        </span>
                       ) : (
                         <span className="text-gray-300">—</span>
                       )}
