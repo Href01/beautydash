@@ -424,6 +424,7 @@ export default function Dashboard() {
           <InsightsPanel
             summary={summary}
             byCountry={filteredByCountry}
+            totalGMV={filteredGMV}
             growth={growth}
             monthlyTotal={filteredMonthlyTotal}
           />

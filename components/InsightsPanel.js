@@ -1,11 +1,12 @@
 import { fmt, fmtPct } from '../lib/constants';
 
-export default function InsightsPanel({ summary, byCountry, growth, monthlyTotal }) {
+export default function InsightsPanel({ summary, byCountry, totalGMV, growth, monthlyTotal }) {
   if (!summary || !byCountry?.length) return null;
 
+  const filteredTotal = totalGMV || byCountry.reduce((s, c) => s + c.gmv, 0);
   const sorted     = [...byCountry].sort((a, b) => b.gmv - a.gmv);
   const top        = sorted[0];
-  const topPct     = top ? (top.gmv / summary.totalGMV * 100).toFixed(1) : 0;
+  const topPct     = top ? (top.gmv / filteredTotal * 100).toFixed(1) : 0;
   const lowestAOV  = [...byCountry].filter(c => c.orders > 0).sort((a, b) => a.aov - b.aov)[0];
   const bestGrowth = growth?.periodComparison?.filter(g => g.gmvGrowth !== null)?.sort((a, b) => b.gmvGrowth - a.gmvGrowth)[0];
   const last       = monthlyTotal?.[monthlyTotal.length - 1];
