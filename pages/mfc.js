@@ -293,6 +293,52 @@ export default function MFCPage() {
           </div>
         </header>
 
+        {/* ── Sticky filter bar ─────────────────────────────────── */}
+        <div className="sticky top-[57px] z-40 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-b border-gray-200 dark:border-gray-700">
+          <div className="max-w-screen-2xl mx-auto px-6 py-2.5 flex flex-wrap gap-x-6 gap-y-2 items-center">
+
+            {/* Markets */}
+            <div className="flex flex-wrap gap-1.5 items-center">
+              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider mr-1">Markets:</span>
+              {COUNTRIES.map(c => (
+                <button key={c} onClick={() => toggle(c)}
+                  className={`px-2.5 py-1 rounded-full text-xs font-bold transition-all ${
+                    selected.includes(c) ? 'text-black shadow-sm' : 'bg-gray-100 dark:bg-gray-800 text-gray-400'
+                  }`}
+                  style={selected.includes(c) ? { background: COUNTRY_META[c]?.color } : {}}>
+                  {COUNTRY_META[c]?.flag} {c}
+                </button>
+              ))}
+            </div>
+
+            <div className="w-px h-4 bg-gray-200 dark:bg-gray-700 hidden sm:block" />
+
+            {/* Period */}
+            <div className="flex flex-wrap gap-1.5 items-center">
+              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider mr-1">Period:</span>
+              {PERIOD_FILTERS.map(f => (
+                <button key={f.value} onClick={() => setPeriod(f.value)}
+                  className={`px-2.5 py-1 rounded-full text-xs font-bold transition-all ${
+                    periodFilter === f.value
+                      ? 'bg-green-500 text-white shadow-sm'
+                      : 'bg-gray-100 dark:bg-gray-800 text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+                  }`}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+
+            {lastTwoPeriods.length === 2 && (
+              <>
+                <div className="w-px h-4 bg-gray-200 dark:bg-gray-700 hidden sm:block" />
+                <span className="text-xs text-gray-400">
+                  MoM: <span className="font-bold text-gray-600 dark:text-gray-300">{lastTwoPeriods[0]}</span> → <span className="font-bold text-gray-600 dark:text-gray-300">{lastTwoPeriods[1]}</span>
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+
         <main className="max-w-screen-2xl mx-auto px-6 py-8 space-y-6">
 
           {/* ── KPIs ────────────────────────────────────────────────── */}
@@ -309,49 +355,6 @@ export default function MFCPage() {
                 <p className="text-xs text-gray-400 mt-0.5">{k.sub}</p>
               </div>
             ))}
-          </div>
-
-          {/* ── Filters ─────────────────────────────────────────────── */}
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-5 space-y-4">
-            <div className="flex flex-wrap gap-6">
-              <div className="flex flex-wrap gap-2 items-center">
-                <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Markets:</span>
-                {COUNTRIES.map(c => (
-                  <button key={c} onClick={() => toggle(c)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
-                      selected.includes(c) ? 'text-black shadow-sm' : 'bg-gray-100 dark:bg-gray-800 text-gray-400'
-                    }`}
-                    style={selected.includes(c) ? { background: COUNTRY_META[c]?.color } : {}}>
-                    {COUNTRY_META[c]?.flag} {c}
-                  </button>
-                ))}
-              </div>
-              <div className="flex flex-wrap gap-2 items-center">
-                <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Period:</span>
-                {PERIOD_FILTERS.map(f => (
-                  <button key={f.value} onClick={() => setPeriod(f.value)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
-                      periodFilter === f.value
-                        ? 'bg-green-500 text-white shadow-sm'
-                        : 'bg-gray-100 dark:bg-gray-800 text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
-                    }`}>
-                    {f.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Active filter summary */}
-            <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-gray-100 dark:border-gray-700">
-              <span className="text-xs text-gray-400">Active filters:</span>
-              <FilterTag label="Period" value={periodLabel} />
-              <FilterTag label="Markets" value={countryLabel} />
-              {lastTwoPeriods.length === 2 && (
-                <span className="text-xs text-gray-400 ml-1">
-                  · MoM compares <span className="font-bold text-gray-600 dark:text-gray-300">{lastTwoPeriods[0]}</span> vs <span className="font-bold text-gray-600 dark:text-gray-300">{lastTwoPeriods[1]}</span>
-                </span>
-              )}
-            </div>
           </div>
 
           {/* ── Charts ──────────────────────────────────────────────── */}

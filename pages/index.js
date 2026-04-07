@@ -240,6 +240,64 @@ export default function Dashboard() {
           </div>
         </header>
 
+        {/* ── Sticky filter bar ─────────────────────────────────── */}
+        <div className="sticky top-[57px] z-40 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-b border-gray-200 dark:border-gray-700">
+          <div className="max-w-screen-2xl mx-auto px-6 py-2.5 flex flex-wrap gap-x-6 gap-y-2 items-center">
+
+            {/* Markets */}
+            <div className="flex flex-wrap gap-1.5 items-center">
+              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider mr-1">Markets:</span>
+              {COUNTRIES.map(c => (
+                <button key={c} onClick={() => toggle(c)}
+                  className={`px-2.5 py-1 rounded-full text-xs font-bold transition-all ${
+                    selected.includes(c) ? 'text-black shadow-sm' : 'bg-gray-100 dark:bg-gray-800 text-gray-400'
+                  }`}
+                  style={selected.includes(c) ? { background: COUNTRY_META[c]?.color } : {}}>
+                  {COUNTRY_META[c]?.flag} {c}
+                </button>
+              ))}
+              <button onClick={() => setSelected(COUNTRIES)}
+                className="px-2.5 py-1 rounded-full text-xs font-bold bg-gray-100 dark:bg-gray-800 text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                All
+              </button>
+            </div>
+
+            <div className="w-px h-4 bg-gray-200 dark:bg-gray-700 hidden sm:block" />
+
+            {/* Period */}
+            <div className="flex flex-wrap gap-1.5 items-center">
+              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider mr-1">Period:</span>
+              {PERIOD_FILTERS.map(f => (
+                <button key={f.value} onClick={() => setPeriodFilter(f.value)}
+                  className={`px-2.5 py-1 rounded-full text-xs font-bold transition-all ${
+                    periodFilter === f.value
+                      ? 'bg-gray-800 dark:bg-white text-white dark:text-gray-900'
+                      : 'bg-gray-100 dark:bg-gray-800 text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+                  }`}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="w-px h-4 bg-gray-200 dark:bg-gray-700 hidden sm:block" />
+
+            {/* Vertical */}
+            <div className="flex flex-wrap gap-1.5 items-center">
+              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider mr-1">Vertical:</span>
+              {VERTICAL_FILTERS.map(f => (
+                <button key={f.value} onClick={() => setVerticalFilter(f.value)}
+                  className={`px-2.5 py-1 rounded-full text-xs font-bold transition-all ${
+                    verticalFilter === f.value
+                      ? 'bg-yellow-400 text-black shadow-sm'
+                      : 'bg-gray-100 dark:bg-gray-800 text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+                  }`}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
         <main className="max-w-screen-2xl mx-auto px-6 py-8 space-y-6">
 
           {/* ── KPIs ──────────────────────────────────────────────── */}
@@ -315,70 +373,6 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* ── Filters ───────────────────────────────────────────── */}
-          <div className="flex flex-wrap gap-6">
-
-            {/* Country filter */}
-            <div className="flex flex-wrap gap-2 items-center">
-              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Markets:</span>
-              {COUNTRIES.map(c => (
-                <button
-                  key={c}
-                  onClick={() => toggle(c)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
-                    selected.includes(c)
-                      ? 'text-black shadow-sm'
-                      : 'bg-gray-100 dark:bg-gray-800 text-gray-400'
-                  }`}
-                  style={selected.includes(c) ? { background: COUNTRY_META[c]?.color } : {}}
-                >
-                  {COUNTRY_META[c]?.flag} {c}
-                </button>
-              ))}
-              <button
-                onClick={() => setSelected(COUNTRIES)}
-                className="px-3 py-1.5 rounded-full text-xs font-bold bg-gray-100 dark:bg-gray-800 text-gray-400 ml-1 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-              >
-                All
-              </button>
-            </div>
-
-            {/* Period filter */}
-            <div className="flex flex-wrap gap-2 items-center">
-              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Period:</span>
-              {PERIOD_FILTERS.map(f => (
-                <button
-                  key={f.value}
-                  onClick={() => setPeriodFilter(f.value)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
-                    periodFilter === f.value
-                      ? 'bg-gray-800 dark:bg-white text-white dark:text-gray-900'
-                      : 'bg-gray-100 dark:bg-gray-800 text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
-                  }`}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Vertical filter */}
-            <div className="flex flex-wrap gap-2 items-center">
-              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Vertical:</span>
-              {VERTICAL_FILTERS.map(f => (
-                <button
-                  key={f.value}
-                  onClick={() => setVerticalFilter(f.value)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
-                    verticalFilter === f.value
-                      ? 'bg-yellow-400 text-black shadow-sm'
-                      : 'bg-gray-100 dark:bg-gray-800 text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
-                  }`}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-          </div>
 
           {/* ── Charts Row 1 ──────────────────────────────────────── */}
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
