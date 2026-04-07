@@ -2,6 +2,7 @@ import { google } from 'googleapis';
 
 const SPREADSHEET_ID = process.env.GOOGLE_SPREADSHEET_ID;
 
+// Core tabs — required. API fails if any of these is missing.
 const SOURCES = [
   {
     tab:      'Reta-CTRY',
@@ -53,6 +54,24 @@ const SOURCES = [
     }
   },
   {
+    tab:      'Part_CVR',
+    vertical: 'PartnerCVR',
+    range:    'A:G',
+    columns: {
+      country:        'qc_session_store_origin_country_code',
+      month:          'qc_session_store_origin_p_creation_month',
+      year:           'qc_session_store_origin_p_creation_year',
+      partner:        'qc_session_store_origin_store_name',
+      cvr:            'qc_session_store_origin_conversion_rate',
+      sessions:       'qc_session_store_origin_number_of_sessions',
+      orders_created: 'qc_session_store_origin_number_of_orders_created',
+    }
+  },
+];
+
+// Qcom tabs — optional. Fetched separately so a missing tab doesn't break the main data.
+const QCOM_SOURCES = [
+  {
     tab:      'QcomAfrc',
     vertical: 'QcomAfrc',
     range:    'A:E',
@@ -67,27 +86,12 @@ const SOURCES = [
   {
     tab:      'QcomAll',
     vertical: 'QcomAll',
-    range:    'A:E',
+    range:    'A:D',
     columns: {
-      country: 'cities_country_code',
-      month:   'bought_products_order_started_local_month',
-      year:    'bought_products_order_started_local_year',
-      gmv:     'bought_products_products_value_delivered_eur',
-      orders:  'bought_products_number_of_distinct_delivered_orders',
-    }
-  },
-  {
-    tab:      'Part_CVR',
-    vertical: 'PartnerCVR',
-    range:    'A:G',
-    columns: {
-      country:        'qc_session_store_origin_country_code',
-      month:          'qc_session_store_origin_p_creation_month',
-      year:           'qc_session_store_origin_p_creation_year',
-      partner:        'qc_session_store_origin_store_name',
-      cvr:            'qc_session_store_origin_conversion_rate',
-      sessions:       'qc_session_store_origin_number_of_sessions',
-      orders_created: 'qc_session_store_origin_number_of_orders_created',
+      month:  'bought_products_order_started_local_month',
+      year:   'bought_products_order_started_local_year',
+      gmv:    'bought_products_products_value_delivered_eur',
+      orders: 'bought_products_number_of_distinct_delivered_orders',
     }
   },
 ];
@@ -129,7 +133,8 @@ function readRows(values, vertical, columns) {
     const sessions       = col.sessions       >= 0 ? parseInt(row[col.sessions])     || 0 : null;
     const orders_created = col.orders_created >= 0 ? parseInt(row[col.orders_created])|| 0 : null;
 
-    if (!country || !month || !year) continue;
+    // country is optional (e.g. QcomAll has no country column)
+    if (!month || !year) continue;
     const period = `${year}-${String(month).padStart(2, '0')}`;
 
     const entry = { country, month, year, period, gmv, orders, vertical };
@@ -385,7 +390,7 @@ export default async function handler(req, res) {
 
     const sheets = google.sheets({ version: 'v4', auth });
 
-    // Fetch all tabs in one batchGet
+    // Fetch core tabs (required)
     const response = await sheets.spreadsheets.values.batchGet({
       spreadsheetId: SPREADSHEET_ID,
       ranges: SOURCES.map(s => `${s.tab}!${s.range}`),
@@ -399,12 +404,27 @@ export default async function handler(req, res) {
       const rows   = readRows(vr.values, source.vertical, source.columns)
         .filter(r => r.period !== currentPeriod);
 
-      if (source.vertical === 'Partners')        partnerRows  = partnerRows.concat(rows);
-      else if (source.vertical === 'PartnerCVR') cvrRows      = cvrRows.concat(rows);
-      else if (source.vertical === 'QcomAfrc')   qcomAfrcRows = qcomAfrcRows.concat(rows);
-      else if (source.vertical === 'QcomAll')    qcomAllRows  = qcomAllRows.concat(rows);
-      else                                       allRows      = allRows.concat(rows);
+      if (source.vertical === 'Partners')        partnerRows = partnerRows.concat(rows);
+      else if (source.vertical === 'PartnerCVR') cvrRows     = cvrRows.concat(rows);
+      else                                       allRows     = allRows.concat(rows);
     });
+
+    // Fetch Qcom tabs separately (optional — missing tabs won't break the main data)
+    try {
+      const qcomResponse = await sheets.spreadsheets.values.batchGet({
+        spreadsheetId: SPREADSHEET_ID,
+        ranges: QCOM_SOURCES.map(s => `${s.tab}!${s.range}`),
+      });
+      (qcomResponse.data.valueRanges || []).forEach((vr, i) => {
+        const source = QCOM_SOURCES[i];
+        const rows   = readRows(vr.values, source.vertical, source.columns)
+          .filter(r => r.period !== currentPeriod);
+        if (source.vertical === 'QcomAfrc') qcomAfrcRows = qcomAfrcRows.concat(rows);
+        if (source.vertical === 'QcomAll')  qcomAllRows  = qcomAllRows.concat(rows);
+      });
+    } catch (qcomErr) {
+      console.warn('Qcom tabs not available yet:', qcomErr.message);
+    }
 
     if (allRows.length === 0) {
       return res.status(200).json({ error: 'No data found in any sheet' });
