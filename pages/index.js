@@ -407,7 +407,10 @@ export default function Dashboard() {
           <CountryTable
             byCountry={filteredByCountry}
             byCountryMonth={filterByPeriod(getCountryMonthSource())}
-            allByCountryMonth={(byCountryMonth || []).filter(r => selected.includes(r.country))}
+            allByCountryMonth={(verticalFilter === 'all'
+              ? (byCountryMonth || [])
+              : (byVerticalCountryMonth || []).filter(r => r.vertical === verticalFilter)
+            ).filter(r => selected.includes(r.country))}
             filteredPeriods={filteredPeriods}
             totalGMV={filteredGMV}
             totalOrders={filteredOrders}
