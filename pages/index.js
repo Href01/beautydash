@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import KPICard from '../components/KPICard';
 import CountryTable from '../components/CountryTable';
+import PartnersTable from '../components/PartnersTable';
 import InsightsPanel from '../components/InsightsPanel';
 import { GMVTrendChart, MonthlyTotalChart, CountryShareChart, EvolutionChart, VerticalComparisonChart } from '../components/Charts';
 import { fmt, COUNTRIES, COUNTRY_META } from '../lib/constants';
@@ -30,6 +31,7 @@ export default function Dashboard() {
   const [selected, setSelected]             = useState(COUNTRIES);
   const [periodFilter, setPeriodFilter]     = useState('all');
   const [verticalFilter, setVerticalFilter] = useState('all');
+  const [partnerData, setPartnerData]       = useState(null);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark);
@@ -37,11 +39,13 @@ export default function Dashboard() {
 
   const fetchData = () => {
     setLoading(true);
-    fetch('/api/data')
-      .then(r => r.json())
-      .then(d => {
+    Promise.all([
+      fetch('/api/data').then(r => r.json()),
+      fetch('/api/partners').then(r => r.json()),
+    ]).then(([d, p]) => {
         if (d.error) throw new Error(d.error);
         setData(d);
+        setPartnerData(p);
         setLoading(false);
       })
       .catch(e => {
@@ -156,6 +160,8 @@ export default function Dashboard() {
   const filteredByCountryMonth = filterByPeriod(getCountryMonthSource())
     .filter(r => selected.includes(r.country));
   const filteredPeriods        = [...new Set(filteredMonthlyTotal.map(m => m.period))].sort();
+  const filteredPartnerMonth   = filterByPeriod(partnerData?.byPartnerMonth || [])
+    .filter(r => selected.includes(r.country));
 
   // ── Recalculate byCountry from filtered source ────────────────
   const filteredByCountry = COUNTRIES.map(country => {
@@ -408,6 +414,9 @@ export default function Dashboard() {
             totalGMV={filteredGMV}
             totalOrders={filteredOrders}
           />
+
+          {/* ── Partners ──────────────────────────────────────────── */}
+          <PartnersTable byPartnerMonth={filteredPartnerMonth} />
 
           {/* ── Insights ──────────────────────────────────────────── */}
           <InsightsPanel
