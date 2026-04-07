@@ -113,14 +113,27 @@ export default async function handler(req, res) {
       aov: r.orders > 0 ? r2(r.gmv / r.orders) : 0,
     })).sort((a, b) => a.period.localeCompare(b.period));
 
+    // ── byCountryL3Month: aggregate by country + l2 + l3 + period
+    const cL3MonthMap = {};
+    rows.forEach(r => {
+      const key = `${r.country}__${r.l2}__${r.l3}__${r.period}`;
+      if (!cL3MonthMap[key]) cL3MonthMap[key] = { country: r.country, l2: r.l2, l3: r.l3 || '(none)', period: r.period, gmv: 0, orders: 0 };
+      cL3MonthMap[key].gmv    += r.gmv;
+      cL3MonthMap[key].orders += r.orders;
+    });
+    const byCountryL3Month = Object.values(cL3MonthMap).map(r => ({
+      country: r.country, l2: r.l2, l3: r.l3, period: r.period,
+      gmv: r2(r.gmv), orders: r.orders,
+      aov: r.orders > 0 ? r2(r.gmv / r.orders) : 0,
+    })).sort((a, b) => a.period.localeCompare(b.period));
+
     const periods = [...new Set(rows.map(r => r.period))].sort();
 
     res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate');
     res.status(200).json({
       meta: { periodStart: periods[0], periodEnd: periods[periods.length - 1], currentPeriod, totalRows: rows.length },
-      byL2Month,
-      byL3Month,
       byCountryL2Month,
+      byCountryL3Month,
     });
 
   } catch (err) {

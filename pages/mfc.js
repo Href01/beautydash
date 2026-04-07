@@ -14,8 +14,8 @@ const PERIOD_FILTERS = [
 
 function filterByPeriod(rows, periodFilter) {
   if (!rows) return [];
-  const now      = new Date();
-  const nowYear  = now.getFullYear();
+  const now = new Date();
+  const nowYear = now.getFullYear();
   const nowMonth = now.getMonth();
   return rows.filter(r => {
     if (!r.period) return false;
@@ -33,10 +33,12 @@ function filterByPeriod(rows, periodFilter) {
   });
 }
 
-function computeMoM(rows, keyFn, valueFn) {
-  // For each key, sort periods and compute MoM for last two periods
+// Compute MoM for a set of monthly rows grouped by keyFn
+// Returns { key: momPct } for last two periods in the set
+function computeMoM(monthlyRows, keyFn, valueFn) {
+  // Build per-key sorted period list
   const byKey = {};
-  rows.forEach(r => {
+  monthlyRows.forEach(r => {
     const k = keyFn(r);
     if (!byKey[k]) byKey[k] = [];
     byKey[k].push(r);
@@ -53,6 +55,38 @@ function computeMoM(rows, keyFn, valueFn) {
   return result;
 }
 
+// Collapse country-level monthly rows into L2-level monthly rows
+function toL2Monthly(countryL2Rows) {
+  const map = {};
+  countryL2Rows.forEach(r => {
+    const key = `${r.l2}__${r.period}`;
+    if (!map[key]) map[key] = { l2: r.l2, period: r.period, gmv: 0, orders: 0 };
+    map[key].gmv    += r.gmv;
+    map[key].orders += r.orders;
+  });
+  return Object.values(map);
+}
+
+// Collapse country-level monthly rows into L3-level monthly rows
+function toL3Monthly(countryL3Rows) {
+  const map = {};
+  countryL3Rows.forEach(r => {
+    const key = `${r.l2}__${r.l3}__${r.period}`;
+    if (!map[key]) map[key] = { l2: r.l2, l3: r.l3, period: r.period, gmv: 0, orders: 0 };
+    map[key].gmv    += r.gmv;
+    map[key].orders += r.orders;
+  });
+  return Object.values(map);
+}
+
+function FilterTag({ label, value }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs font-bold">
+      <span className="text-green-400">◆</span>{label}: <span className="font-black">{value}</span>
+    </span>
+  );
+}
+
 export default function MFCPage() {
   const [data, setData]             = useState(null);
   const [loading, setLoading]       = useState(true);
@@ -60,11 +94,9 @@ export default function MFCPage() {
   const [dark, setDark]             = useState(true);
   const [selected, setSelected]     = useState(COUNTRIES);
   const [periodFilter, setPeriod]   = useState('all');
-  const [selectedL2, setSelectedL2] = useState(null); // drill-down
+  const [selectedL2, setSelectedL2] = useState(null);
 
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', dark);
-  }, [dark]);
+  useEffect(() => { document.documentElement.classList.toggle('dark', dark); }, [dark]);
 
   useEffect(() => {
     fetch('/api/mfc')
@@ -95,17 +127,18 @@ export default function MFCPage() {
     </div>
   );
 
-  const { byL2Month, byL3Month, byCountryL2Month, meta } = data;
+  const { byCountryL2Month, byCountryL3Month, meta } = data;
 
-  // ── Apply filters ─────────────────────────────────────────────
-  const filtL2   = filterByPeriod(byL2Month, periodFilter);
-  const filtL3   = filterByPeriod(byL3Month, periodFilter);
-  const filtCL2  = filterByPeriod(byCountryL2Month, periodFilter)
+  // ── Apply country + period filters ────────────────────────────
+  const filtCL2 = filterByPeriod(byCountryL2Month, periodFilter)
+    .filter(r => selected.includes(r.country));
+  const filtCL3 = filterByPeriod(byCountryL3Month, periodFilter)
     .filter(r => selected.includes(r.country));
 
-  // ── Aggregate L2 ──────────────────────────────────────────────
+  // ── L2 aggregation (from country-filtered data) ───────────────
+  const l2MonthlyFiltered = toL2Monthly(filtCL2);
   const l2Map = {};
-  filtL2.forEach(r => {
+  l2MonthlyFiltered.forEach(r => {
     if (!l2Map[r.l2]) l2Map[r.l2] = { l2: r.l2, gmv: 0, orders: 0 };
     l2Map[r.l2].gmv    += r.gmv;
     l2Map[r.l2].orders += r.orders;
@@ -117,50 +150,52 @@ export default function MFCPage() {
   const totalGMV    = l2Rows.reduce((s, r) => s + r.gmv, 0);
   const totalOrders = l2Rows.reduce((s, r) => s + r.orders, 0);
 
-  const momL2GMV    = computeMoM(filtL2,  r => r.l2, r => r.gmv);
-  const momL2Orders = computeMoM(filtL2,  r => r.l2, r => r.orders);
+  // MoM uses the country-filtered monthly L2 data
+  const momL2GMV    = computeMoM(l2MonthlyFiltered, r => r.l2, r => r.gmv);
+  const momL2Orders = computeMoM(l2MonthlyFiltered, r => r.l2, r => r.orders);
 
-  // ── Aggregate L3 (for selected L2 drill-down) ─────────────────
-  const l3Rows = (() => {
-    const src = selectedL2 ? filtL3.filter(r => r.l2 === selectedL2) : filtL3;
-    const map  = {};
-    src.forEach(r => {
-      const key = `${r.l2}__${r.l3}`;
-      if (!map[key]) map[key] = { l2: r.l2, l3: r.l3, gmv: 0, orders: 0 };
-      map[key].gmv    += r.gmv;
-      map[key].orders += r.orders;
-    });
-    return Object.values(map)
-      .map(r => ({ ...r, aov: r.orders > 0 ? r.gmv / r.orders : 0 }))
-      .sort((a, b) => b.gmv - a.gmv);
-  })();
-
-  const l3TotalGMV = selectedL2
-    ? (l2Map[selectedL2]?.gmv || totalGMV)
-    : totalGMV;
-
-  const momL3GMV = computeMoM(
-    selectedL2 ? filtL3.filter(r => r.l2 === selectedL2) : filtL3,
-    r => `${r.l2}__${r.l3}`,
-    r => r.gmv
+  // ── L3 aggregation (from country-filtered data) ───────────────
+  const l3MonthlyFiltered = toL3Monthly(
+    selectedL2 ? filtCL3.filter(r => r.l2 === selectedL2) : filtCL3
   );
+  const l3Map = {};
+  l3MonthlyFiltered.forEach(r => {
+    const key = `${r.l2}__${r.l3}`;
+    if (!l3Map[key]) l3Map[key] = { l2: r.l2, l3: r.l3, gmv: 0, orders: 0 };
+    l3Map[key].gmv    += r.gmv;
+    l3Map[key].orders += r.orders;
+  });
+  const l3Rows = Object.values(l3Map)
+    .map(r => ({ ...r, aov: r.orders > 0 ? r.gmv / r.orders : 0 }))
+    .sort((a, b) => b.gmv - a.gmv);
 
-  // ── Country × L2 breakdown ────────────────────────────────────
+  const l3TotalGMV = selectedL2 ? (l2Map[selectedL2]?.gmv || totalGMV) : totalGMV;
+  const momL3GMV   = computeMoM(l3MonthlyFiltered, r => `${r.l2}__${r.l3}`, r => r.gmv);
+
+  // ── Country × L2 weight breakdown ────────────────────────────
   const countryMap = {};
   filtCL2.forEach(r => {
     if (!countryMap[r.country]) countryMap[r.country] = { country: r.country, total: 0, byL2: {} };
-    countryMap[r.country].total         += r.gmv;
-    countryMap[r.country].byL2[r.l2]    = (countryMap[r.country].byL2[r.l2] || 0) + r.gmv;
+    countryMap[r.country].total        += r.gmv;
+    countryMap[r.country].byL2[r.l2]   = (countryMap[r.country].byL2[r.l2] || 0) + r.gmv;
   });
   const countryRows = Object.values(countryMap).sort((a, b) => b.total - a.total);
   const allL2s = [...new Set(filtCL2.map(r => r.l2))].sort();
+
+  // ── Filter summary labels ─────────────────────────────────────
+  const periodLabel = PERIOD_FILTERS.find(f => f.value === periodFilter)?.label || 'All time';
+  const countryLabel = selected.length === COUNTRIES.length
+    ? 'All markets'
+    : selected.map(c => `${COUNTRY_META[c]?.flag} ${c}`).join(', ');
+  const filteredPeriods = [...new Set(filtCL2.map(r => r.period))].sort();
+  const lastTwoPeriods = filteredPeriods.slice(-2);
 
   return (
     <div className={dark ? 'dark' : ''}>
       <Head><title>MFC Deep Dive · Glovo Beauty Africa</title></Head>
       <div className="min-h-screen bg-gray-50 dark:bg-gray-950 transition-colors">
 
-        {/* ── Header ────────────────────────────────────────────── */}
+        {/* ── Header ──────────────────────────────────────────────── */}
         <header className="sticky top-0 z-50 bg-white/90 dark:bg-gray-900/90 backdrop-blur border-b border-gray-200 dark:border-gray-700">
           <div className="max-w-screen-2xl mx-auto px-6 py-3 flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -169,18 +204,14 @@ export default function MFCPage() {
               </div>
               <div>
                 <h1 className="font-black text-gray-900 dark:text-white text-sm">MFC Deep Dive · Category Analysis</h1>
-                <p className="text-xs text-gray-400">
-                  {meta?.periodStart} → {meta?.periodEnd} · {meta?.totalRows?.toLocaleString()} rows
-                </p>
+                <p className="text-xs text-gray-400">{meta?.periodStart} → {meta?.periodEnd} · {meta?.totalRows?.toLocaleString()} rows · current month excluded</p>
               </div>
-              <Link href="/" className="ml-4 text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+              <Link href="/" className="ml-2 text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
                 ← Main Dashboard
               </Link>
             </div>
-            <button
-              onClick={() => setDark(!dark)}
-              className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-            >
+            <button onClick={() => setDark(!dark)}
+              className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
               {dark ? '☀️ Light' : '🌙 Dark'}
             </button>
           </div>
@@ -188,13 +219,13 @@ export default function MFCPage() {
 
         <main className="max-w-screen-2xl mx-auto px-6 py-8 space-y-6">
 
-          {/* ── KPIs ──────────────────────────────────────────────── */}
+          {/* ── KPIs ────────────────────────────────────────────────── */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[
-              { label: 'Total MFC GMV',  value: fmt(totalGMV),                  sub: 'selected period', color: 'border-green-500' },
-              { label: 'Total Orders',   value: totalOrders.toLocaleString(),    sub: 'selected period', color: 'border-blue-400' },
-              { label: 'AOV',            value: `€${totalOrders > 0 ? (totalGMV / totalOrders).toFixed(2) : '0.00'}`, sub: 'avg order value', color: 'border-yellow-400' },
-              { label: 'L2 Categories', value: l2Rows.length,                   sub: `${l3Rows.length} L3 subcategories`, color: 'border-purple-400' },
+              { label: 'MFC GMV',        value: fmt(totalGMV),                        sub: 'sum across selected countries & period', color: 'border-green-500' },
+              { label: 'Orders',         value: totalOrders.toLocaleString(),          sub: 'sum across selected countries & period', color: 'border-blue-400'  },
+              { label: 'AOV',            value: `€${totalOrders > 0 ? (totalGMV / totalOrders).toFixed(2) : '0.00'}`, sub: 'GMV ÷ orders', color: 'border-yellow-400' },
+              { label: 'L2 Categories', value: l2Rows.length,                        sub: `${l3Rows.length} L3 subcategories active`, color: 'border-purple-400' },
             ].map(k => (
               <div key={k.label} className={`bg-white dark:bg-gray-800 rounded-xl p-5 shadow-sm border-l-4 ${k.color}`}>
                 <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-1">{k.label}</p>
@@ -204,42 +235,64 @@ export default function MFCPage() {
             ))}
           </div>
 
-          {/* ── Filters ───────────────────────────────────────────── */}
-          <div className="flex flex-wrap gap-6">
-            <div className="flex flex-wrap gap-2 items-center">
-              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Markets:</span>
-              {COUNTRIES.map(c => (
-                <button key={c} onClick={() => toggle(c)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
-                    selected.includes(c) ? 'text-black shadow-sm' : 'bg-gray-100 dark:bg-gray-800 text-gray-400'
-                  }`}
-                  style={selected.includes(c) ? { background: COUNTRY_META[c]?.color } : {}}
-                >
-                  {COUNTRY_META[c]?.flag} {c}
-                </button>
-              ))}
+          {/* ── Filters ─────────────────────────────────────────────── */}
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-5 space-y-4">
+            <div className="flex flex-wrap gap-6">
+              <div className="flex flex-wrap gap-2 items-center">
+                <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Markets:</span>
+                {COUNTRIES.map(c => (
+                  <button key={c} onClick={() => toggle(c)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
+                      selected.includes(c) ? 'text-black shadow-sm' : 'bg-gray-100 dark:bg-gray-800 text-gray-400'
+                    }`}
+                    style={selected.includes(c) ? { background: COUNTRY_META[c]?.color } : {}}>
+                    {COUNTRY_META[c]?.flag} {c}
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-2 items-center">
+                <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Period:</span>
+                {PERIOD_FILTERS.map(f => (
+                  <button key={f.value} onClick={() => setPeriod(f.value)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
+                      periodFilter === f.value
+                        ? 'bg-green-500 text-white shadow-sm'
+                        : 'bg-gray-100 dark:bg-gray-800 text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+                    }`}>
+                    {f.label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2 items-center">
-              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Period:</span>
-              {PERIOD_FILTERS.map(f => (
-                <button key={f.value} onClick={() => setPeriod(f.value)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
-                    periodFilter === f.value
-                      ? 'bg-green-500 text-white shadow-sm'
-                      : 'bg-gray-100 dark:bg-gray-800 text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
-                  }`}
-                >
-                  {f.label}
-                </button>
-              ))}
+
+            {/* Active filter summary */}
+            <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-gray-100 dark:border-gray-700">
+              <span className="text-xs text-gray-400">Active filters:</span>
+              <FilterTag label="Period" value={periodLabel} />
+              <FilterTag label="Markets" value={countryLabel} />
+              {lastTwoPeriods.length === 2 && (
+                <span className="text-xs text-gray-400 ml-1">
+                  · MoM compares <span className="font-bold text-gray-600 dark:text-gray-300">{lastTwoPeriods[0]}</span> vs <span className="font-bold text-gray-600 dark:text-gray-300">{lastTwoPeriods[1]}</span>
+                </span>
+              )}
             </div>
           </div>
 
-          {/* ── L2 Category Table ─────────────────────────────────── */}
+          {/* ── L2 Category Table ───────────────────────────────────── */}
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
             <div className="p-6 border-b border-gray-100 dark:border-gray-700">
-              <h2 className="font-bold text-gray-900 dark:text-white">L2 Category Breakdown</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Click a row to drill into L3 subcategories</p>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="font-bold text-gray-900 dark:text-white">L2 Category Breakdown</h2>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    Aggregated across <span className="font-semibold">{countryLabel}</span> · <span className="font-semibold">{periodLabel}</span> · click a row to drill into L3
+                  </p>
+                </div>
+                <div className="text-xs text-gray-400 bg-gray-50 dark:bg-gray-900 rounded-lg px-3 py-2 flex-shrink-0 space-y-0.5">
+                  <p><span className="font-bold text-gray-600 dark:text-gray-300">% GMV / % Orders</span> = share of column total</p>
+                  <p><span className="font-bold text-gray-600 dark:text-gray-300">MoM</span> = last month vs previous month</p>
+                </div>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -247,9 +300,9 @@ export default function MFCPage() {
                   <tr className="bg-gray-50 dark:bg-gray-900 text-xs font-bold uppercase tracking-wider text-gray-400">
                     <th className="px-5 py-3 text-left">L2 Category</th>
                     <th className="px-5 py-3 text-right">GMV</th>
-                    <th className="px-5 py-3 text-right">% GMV</th>
+                    <th className="px-5 py-3 text-right">% of Total GMV</th>
                     <th className="px-5 py-3 text-right">Orders</th>
-                    <th className="px-5 py-3 text-right">% Orders</th>
+                    <th className="px-5 py-3 text-right">% of Total Orders</th>
                     <th className="px-5 py-3 text-right">AOV</th>
                     <th className="px-5 py-3 text-right">MoM GMV</th>
                     <th className="px-5 py-3 text-right">MoM Orders</th>
@@ -261,18 +314,13 @@ export default function MFCPage() {
                     const ordersPct = totalOrders > 0 ? row.orders / totalOrders * 100 : 0;
                     const isActive  = selectedL2 === row.l2;
                     return (
-                      <tr
-                        key={row.l2}
-                        onClick={() => setSelectedL2(isActive ? null : row.l2)}
+                      <tr key={row.l2} onClick={() => setSelectedL2(isActive ? null : row.l2)}
                         className={`cursor-pointer transition-colors ${
-                          isActive
-                            ? 'bg-green-50 dark:bg-green-900/20'
-                            : 'hover:bg-gray-50 dark:hover:bg-gray-900'
-                        }`}
-                      >
+                          isActive ? 'bg-green-50 dark:bg-green-900/20' : 'hover:bg-gray-50 dark:hover:bg-gray-900'
+                        }`}>
                         <td className="px-5 py-3 font-medium text-gray-900 dark:text-white">
                           <div className="flex items-center gap-2">
-                            {isActive && <span className="w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0" />}
+                            {isActive && <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />}
                             {row.l2}
                           </div>
                         </td>
@@ -326,19 +374,24 @@ export default function MFCPage() {
             </div>
           </div>
 
-          {/* ── L3 Drill-down Table ───────────────────────────────── */}
+          {/* ── L3 Drill-down Table ─────────────────────────────────── */}
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
-            <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
-              <div>
-                <h2 className="font-bold text-gray-900 dark:text-white">
-                  L3 Subcategories
-                  {selectedL2 && <span className="ml-2 text-green-500">· {selectedL2}</span>}
-                </h2>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  {selectedL2 ? 'Showing subcategories for selected L2 — click L2 row to deselect' : 'Showing all L3 — click an L2 row above to filter'}
-                </p>
+            <div className="p-6 border-b border-gray-100 dark:border-gray-700">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="font-bold text-gray-900 dark:text-white">
+                    L3 Subcategories
+                    {selectedL2 && <span className="ml-2 text-green-500 font-black">· {selectedL2}</span>}
+                  </h2>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {selectedL2
+                      ? <>Subcategories within <span className="font-semibold">{selectedL2}</span> · % column = share of that L2's GMV · click L2 row again to reset</>
+                      : <>All L3 subcategories · % column = share of total MFC GMV · click an L2 row above to filter</>
+                    }
+                  </p>
+                </div>
+                <span className="text-xs font-bold text-gray-400 uppercase tracking-wider flex-shrink-0">{l3Rows.length} subcategories</span>
               </div>
-              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">{l3Rows.length} categories</span>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -347,7 +400,7 @@ export default function MFCPage() {
                     <th className="px-5 py-3 text-left">L2</th>
                     <th className="px-5 py-3 text-left">L3 Subcategory</th>
                     <th className="px-5 py-3 text-right">GMV</th>
-                    <th className="px-5 py-3 text-right">% of {selectedL2 ? 'L2' : 'Total'}</th>
+                    <th className="px-5 py-3 text-right">% of {selectedL2 ? 'L2 GMV' : 'Total GMV'}</th>
                     <th className="px-5 py-3 text-right">Orders</th>
                     <th className="px-5 py-3 text-right">AOV</th>
                     <th className="px-5 py-3 text-right">MoM GMV</th>
@@ -355,7 +408,7 @@ export default function MFCPage() {
                 </thead>
                 <tbody className="divide-y divide-gray-50 dark:divide-gray-700">
                   {l3Rows.map(row => {
-                    const pct = l3TotalGMV > 0 ? row.gmv / l3TotalGMV * 100 : 0;
+                    const pct    = l3TotalGMV > 0 ? row.gmv / l3TotalGMV * 100 : 0;
                     const momKey = `${row.l2}__${row.l3}`;
                     return (
                       <tr key={momKey} className="hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors">
@@ -385,12 +438,21 @@ export default function MFCPage() {
             </div>
           </div>
 
-          {/* ── Country × L2 Weight Table ─────────────────────────── */}
+          {/* ── Country × L2 Weight Table ───────────────────────────── */}
           {countryRows.length > 0 && allL2s.length > 0 && (
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
               <div className="p-6 border-b border-gray-100 dark:border-gray-700">
-                <h2 className="font-bold text-gray-900 dark:text-white">% GMV Weight by Country × L2</h2>
-                <p className="text-xs text-gray-400 mt-0.5">Each cell = % of that country's MFC GMV · selected period</p>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="font-bold text-gray-900 dark:text-white">% GMV Weight by Country × L2</h2>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      Each cell = that L2's share of <span className="font-semibold">that country's</span> total MFC GMV · rows sum to 100% · <span className="font-semibold">{periodLabel}</span>
+                    </p>
+                  </div>
+                  <div className="text-xs text-gray-400 bg-gray-50 dark:bg-gray-900 rounded-lg px-3 py-2 flex-shrink-0">
+                    <p>e.g. MA 45% Haircare = 45% of Morocco's MFC GMV is Haircare</p>
+                  </div>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -399,8 +461,8 @@ export default function MFCPage() {
                       <th className="px-5 py-3 text-left">Country</th>
                       <th className="px-5 py-3 text-right">Total GMV</th>
                       {allL2s.map(l2 => (
-                        <th key={l2} className="px-3 py-3 text-right max-w-[120px]">
-                          <span className="block truncate" title={l2}>{l2}</span>
+                        <th key={l2} className="px-3 py-3 text-right">
+                          <span className="block max-w-[100px] truncate ml-auto" title={l2}>{l2}</span>
                         </th>
                       ))}
                     </tr>
@@ -414,25 +476,24 @@ export default function MFCPage() {
                             <div className="flex items-center gap-2">
                               <span>{meta.flag || '🌍'}</span>
                               <span className="font-bold text-gray-900 dark:text-white">{row.country}</span>
+                              <span className="text-xs text-gray-400">{meta.name}</span>
                             </div>
                           </td>
                           <td className="px-5 py-3 text-right font-bold text-gray-900 dark:text-white">{fmt(row.total)}</td>
                           {allL2s.map(l2 => {
                             const val = row.byL2[l2] || 0;
                             const pct = row.total > 0 ? val / row.total * 100 : 0;
-                            const intensity = Math.round(pct / 100 * 9);
-                            const bgClass = pct > 0
-                              ? `bg-green-${Math.max(1, intensity) * 100 > 900 ? 900 : Math.max(100, intensity * 100)}`
-                              : '';
                             return (
                               <td key={l2} className="px-3 py-3 text-right">
                                 {pct > 0 ? (
-                                  <div className="flex flex-col items-end">
-                                    <span className="text-xs font-bold text-gray-900 dark:text-white">{pct.toFixed(1)}%</span>
+                                  <div className="flex flex-col items-end gap-0.5">
+                                    <span className={`text-xs font-bold ${pct > 30 ? 'text-green-600 dark:text-green-400' : 'text-gray-700 dark:text-gray-300'}`}>
+                                      {pct.toFixed(1)}%
+                                    </span>
                                     <span className="text-xs text-gray-400">{fmt(val)}</span>
                                   </div>
                                 ) : (
-                                  <span className="text-gray-200 dark:text-gray-700">—</span>
+                                  <span className="text-gray-200 dark:text-gray-700 text-xs">—</span>
                                 )}
                               </td>
                             );
